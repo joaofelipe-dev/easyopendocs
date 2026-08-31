@@ -45,7 +45,7 @@ Sem rebuild, sem cadastro manual.
 
 ## Como subir
 
-Pré-requisitos: **Node.js 20+** e um **PostgreSQL 17** acessível (via Docker em
+Pré-requisitos: **Node.js 22.19+** e um **PostgreSQL 17** acessível (via Docker em
 dev, ou uma instância nativa — em produção, por exemplo).
 
 ```bash
@@ -538,6 +538,12 @@ tests/
   `src/generated/prisma/` e não é versionado — `npm install` regenera.
 - **Next 16** renomeou `middleware.ts` para `proxy.ts`, e `params`/`searchParams`
   são `Promise`.
+- **Node 22.19+** não é preferência, é requisito: o `isomorphic-dompurify`
+  puxa `jsdom` → `undici@8`, que usa `webidl.util.markAsUncloneable`, uma API
+  que só existe a partir do Node 22.19. Em Node 20 o `npm ci` só emite um aviso
+  `EBADENGINE`, e a quebra aparece bem depois, no `next build`, como
+  `TypeError: webidl.util.markAsUncloneable is not a function` ao coletar dados
+  de página. O `engines` do `package.json` declara isso para o npm avisar cedo.
 - `forbidden()` do Next exige a flag experimental `authInterrupts`; para não
   depender dela num caminho de autorização, o app redireciona para `/sem-acesso`.
 

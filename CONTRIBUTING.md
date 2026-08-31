@@ -8,7 +8,7 @@ comentários seguem o padrão do que já está lá.
 
 ## Ambiente
 
-Pré-requisitos: **Node.js 20+** e um **PostgreSQL 17** acessível.
+Pré-requisitos: **Node.js 22.19+** e um **PostgreSQL 17** acessível.
 
 ```bash
 cp .env.example .env
