@@ -1,0 +1,45 @@
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  # Dependências npm. Patch e minor vêm agrupados num PR só por semana — o
+  # volume de atualização do ecossistema Next/React/Prisma é alto demais para
+  # um PR por pacote valer a revisão. Major vem separado, um por PR, porque
+  # quase sempre exige leitura de changelog.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      producao:
+        dependency-type: production
+        update-types: [minor, patch]
+      desenvolvimento:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Prisma 8 está em release candidate e a migração exige mudança de
+      # código (ver "Notas de implementação" no README). Subir por PR
+      # automático não faz sentido — quando for a hora, é trabalho manual.
+      - dependency-name: prisma
+        update-types: [version-update:semver-major]
+      - dependency-name: "@prisma/client"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@prisma/adapter-pg"
+        update-types: [version-update:semver-major]
+
+  # ---------------------------------------------------------------------------
+  # As actions usadas pelo ci.yml (actions/checkout, actions/setup-node).
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"

@@ -545,23 +545,26 @@ tests/
 
 ## Contribuindo
 
-Issues e pull requests são bem-vindos. Antes de abrir um PR:
+Issues e pull requests são bem-vindos. Antes de abrir um PR, rode os mesmos
+comandos que o CI roda, **nesta ordem**:
 
 ```bash
-npm run build      # precisa vir antes do typecheck — veja a nota abaixo
+npm run build      # precisa vir antes do typecheck
 npm run typecheck
 npm run lint
 npm test
 ```
 
-São os mesmos comandos que o CI roda, na mesma ordem. O `build` vem primeiro
-porque o `tsconfig.json` inclui `.next/types/**`, onde o Next gera os tipos
-`PageProps`/`LayoutProps` que as páginas usam: em checkout limpo esses arquivos
-ainda não existem e o `tsc --noEmit` falha com `TS2304`. Os testes precisam de um Postgres
-acessível em `TEST_DATABASE_URL` — `npm run db:up` sobe um.
+O `build` vem primeiro porque o `tsconfig.json` inclui `.next/types/**`, onde o
+Next gera os tipos `PageProps`/`LayoutProps` que as páginas usam: em checkout
+limpo esses arquivos ainda não existem e o `tsc --noEmit` falha com `TS2304`.
+Os testes precisam de um Postgres acessível em `TEST_DATABASE_URL` —
+`npm run db:up` sobe um.
 
-A interface e a documentação estão em português (pt-BR), que é o idioma do
-projeto; PRs podem ser escritos em português ou inglês.
+O resto — estilo, escopo de PR, convenção de commit — está em
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+Para falha de segurança, não abra issue pública: veja [SECURITY.md](SECURITY.md).
 
 ## Licença
 

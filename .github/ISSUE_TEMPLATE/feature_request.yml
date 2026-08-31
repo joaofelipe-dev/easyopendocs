@@ -1,0 +1,42 @@
+name: Sugerir uma melhoria
+description: Uma funcionalidade ou mudança de comportamento
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema isso resolve
+      description: |
+        Descreva a situação real, não a solução. É o que permite avaliar se
+        existe um caminho mais simples do que o proposto.
+      placeholder: |
+        Quando um departamento tem muitas documentações, não há como achar uma
+        pelo título sem abrir a lista inteira e usar o Ctrl+F do navegador.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposta
+    attributes:
+      label: O que você propõe
+      description: Como você imagina que funcionaria.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+      description: Inclusive "dá para viver sem isso, fazendo X".
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: escopo
+    attributes:
+      label: Antes de enviar
+      options:
+        - label: Procurei nas issues abertas e fechadas se já existe algo parecido
+          required: true
+        - label: Isso é sobre o portal em si, não sobre o conteúdo de uma instalação específica
+          required: true
