@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: easyopendocs-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: easyopendocs
+      POSTGRES_PASSWORD: easyopendocs
+      POSTGRES_DB: easyopendocs
+    ports:
+      # 5433 no host para não conflitar com um Postgres local na 5432.
+      - "5433:5432"
+    volumes:
+      - easyopendocs-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U easyopendocs -d easyopendocs"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  easyopendocs-pgdata:

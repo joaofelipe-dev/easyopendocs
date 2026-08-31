@@ -1,0 +1,165 @@
+// Schema do easyopendocs.
+// A connection string vive em prisma.config.ts (Prisma 7), não aqui.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Identidade
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  isSuperAdmin Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  mustChangePassword Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  departmentRoles UserDepartmentRole[]
+  createdDocuments Document[]         @relation("DocumentAuthor")
+
+  @@index([email])
+}
+
+// ---------------------------------------------------------------------------
+// RBAC
+// ---------------------------------------------------------------------------
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions     RolePermission[]
+  departmentRoles UserDepartmentRole[]
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+/// Um usuário pode ter múltiplos papéis, em múltiplos departamentos,
+/// simultaneamente. A chave composta impede duplicar o mesmo papel no mesmo
+/// departamento, mas não impede (userA, depA, Viewer) + (userA, depA, Editor).
+model UserDepartmentRole {
+  id           String   @id @default(cuid())
+  userId       String
+  departmentId String
+  roleId       String
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, departmentId, roleId])
+  @@index([departmentId])
+  @@index([roleId])
+}
+
+// ---------------------------------------------------------------------------
+// Conteúdo (espelho do filesystem)
+// ---------------------------------------------------------------------------
+
+model Department {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+  /// Caminho relativo a CONTENT_ROOT (normalmente igual ao slug).
+  path        String
+  /// Pasta sumiu do filesystem: some da UI mas preserva permissões e histórico.
+  isOrphan    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documents Document[]
+  userRoles UserDepartmentRole[]
+
+  @@index([isOrphan])
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  departmentId String
+  slug         String
+  title        String
+  description  String?
+  /// Caminho relativo à raiz do projeto, ex: content/departamentos/rh/x.html
+  filePath     String   @unique
+  /// SHA-256 do arquivo, usado para pular reprocessamento no sync incremental.
+  contentHash  String
+  /// mtime do arquivo no último sync (comparação barata antes do hash).
+  fileMtime    DateTime
+  fileSize     Int      @default(0)
+  isOrphan     Boolean  @default(false)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  createdBy  User?      @relation("DocumentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([departmentId, slug])
+  @@index([departmentId, isOrphan])
+}
+
+// ---------------------------------------------------------------------------
+// Observabilidade do sync
+// ---------------------------------------------------------------------------
+
+enum SyncTrigger {
+  MANUAL
+  AUTOMATIC
+  SEED
+  DOCUMENT_CREATE
+}
+
+model SyncLog {
+  id          String      @id @default(cuid())
+  trigger     SyncTrigger @default(AUTOMATIC)
+  startedAt   DateTime    @default(now())
+  finishedAt  DateTime?
+  durationMs  Int         @default(0)
+  ok          Boolean     @default(true)
+  error       String?
+
+  departmentsCreated Int @default(0)
+  departmentsUpdated Int @default(0)
+  departmentsOrphaned Int @default(0)
+  documentsCreated   Int @default(0)
+  documentsUpdated   Int @default(0)
+  documentsOrphaned  Int @default(0)
+  documentsSkipped   Int @default(0)
+
+  @@index([startedAt])
+}

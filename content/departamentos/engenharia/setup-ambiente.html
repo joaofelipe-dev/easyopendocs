@@ -1,0 +1,32 @@
+<!-- title: Como configurar o ambiente local -->
+<!-- description: Passo a passo para subir o projeto localmente -->
+<article>
+  <h1>Como configurar o ambiente local</h1>
+
+  <p>
+    Este é um documento de exemplo que acompanha a instalação. Ele existe para
+    você ver como uma documentação aparece no portal — pode editá-lo pela
+    interface ou apagar o arquivo e o registro some da listagem no próximo sync.
+  </p>
+
+  <h2>Pré-requisitos</h2>
+  <ul>
+    <li>Node.js 20 ou superior</li>
+    <li>Docker e Docker Compose (ou um PostgreSQL 17 acessível)</li>
+  </ul>
+
+  <h2>Passo a passo</h2>
+  <ol>
+    <li>Copie <code>.env.example</code> para <code>.env</code>.</li>
+    <li>Gere um segredo com <code>openssl rand -base64 32</code> e cole em <code>NEXTAUTH_SECRET</code>.</li>
+    <li>Suba o banco com <code>npm run db:up</code>.</li>
+    <li>Aplique as migrations com <code>npm run db:migrate</code>.</li>
+    <li>Rode <code>npm run dev</code> e abra <code>http://localhost:3000</code>.</li>
+  </ol>
+
+  <h2>Problemas comuns</h2>
+  <p>
+    Se <code>docker ps</code> retornar <em>permission denied</em>, adicione seu
+    usuário ao grupo <code>docker</code> e faça logout/login.
+  </p>
+</article>

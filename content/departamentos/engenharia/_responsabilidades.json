@@ -1,0 +1,26 @@
+{
+  "areas": [
+    {
+      "id": "infraestrutura",
+      "title": "Infraestrutura",
+      "items": [
+        {
+          "id": "ambientes-de-desenvolvimento",
+          "title": "Ambientes de desenvolvimento",
+          "description": "Manter o ambiente local reproduzível e documentado, de forma que uma pessoa nova consiga subir o projeto sem ajuda.",
+          "owner": null,
+          "docs": ["setup-ambiente"],
+          "deliversTo": []
+        },
+        {
+          "id": "backup-e-restore",
+          "title": "Backup e restore",
+          "description": "Rotina diária de backup, teste periódico de restore e política de retenção.",
+          "owner": null,
+          "docs": [],
+          "deliversTo": []
+        }
+      ]
+    }
+  ]
+}

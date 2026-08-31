@@ -1,0 +1,387 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Tipografia das documentações.
+ *
+ * O HTML dentro de .doc-content vem dos arquivos em content/departamentos/ e
+ * chega aqui sem classe nenhuma — o autor da doc escreve <h2>, <p>, <table>
+ * e o estilo é responsabilidade do app. Por isso a estilização é por tag.
+ * ------------------------------------------------------------------------- */
+@layer components {
+  .doc-content {
+    @apply text-foreground/90 text-[0.9375rem] leading-7;
+  }
+
+  .doc-content > article > *:first-child,
+  .doc-content > *:first-child {
+    @apply mt-0;
+  }
+
+  .doc-content h1 {
+    @apply text-foreground mt-10 mb-4 text-3xl font-semibold tracking-tight text-balance;
+  }
+
+  .doc-content h2 {
+    @apply text-foreground mt-10 mb-3 scroll-mt-20 border-b pb-2 text-xl font-semibold tracking-tight;
+  }
+
+  .doc-content h3 {
+    @apply text-foreground mt-8 mb-2 scroll-mt-20 text-base font-semibold tracking-tight;
+  }
+
+  .doc-content h4,
+  .doc-content h5,
+  .doc-content h6 {
+    @apply text-foreground mt-6 mb-2 text-sm font-semibold;
+  }
+
+  .doc-content p {
+    @apply my-4;
+  }
+
+  .doc-content a {
+    @apply text-foreground font-medium underline decoration-current/40 underline-offset-4 transition-colors;
+  }
+
+  .doc-content a:hover {
+    @apply decoration-current;
+  }
+
+  .doc-content ul {
+    @apply my-4 list-disc space-y-1.5 pl-6;
+  }
+
+  .doc-content ol {
+    @apply my-4 list-decimal space-y-1.5 pl-6;
+  }
+
+  .doc-content li::marker {
+    @apply text-muted-foreground;
+  }
+
+  .doc-content li > ul,
+  .doc-content li > ol {
+    @apply my-1.5;
+  }
+
+  .doc-content dl {
+    @apply my-4;
+  }
+
+  .doc-content dt {
+    @apply text-foreground mt-4 font-semibold;
+  }
+
+  .doc-content dd {
+    @apply text-muted-foreground mt-1 pl-4;
+  }
+
+  .doc-content blockquote {
+    @apply border-foreground/20 text-muted-foreground my-5 border-l-2 pl-4 italic;
+  }
+
+  .doc-content blockquote p {
+    @apply my-2;
+  }
+
+  .doc-content code {
+    @apply bg-muted text-foreground rounded-md border px-1.5 py-0.5 font-mono text-[0.8125rem];
+  }
+
+  .doc-content pre {
+    @apply bg-muted my-5 overflow-x-auto rounded-lg border p-4;
+  }
+
+  .doc-content pre code {
+    @apply border-0 bg-transparent p-0 text-[0.8125rem] leading-6;
+  }
+
+  .doc-content kbd {
+    @apply bg-muted rounded border px-1.5 py-0.5 font-mono text-xs shadow-sm;
+  }
+
+  /* Tabela larga rola dentro do próprio container, sem empurrar a página. */
+  .doc-content table {
+    @apply my-5 block w-full max-w-full overflow-x-auto text-sm;
+    border-collapse: collapse;
+  }
+
+  .doc-content thead {
+    @apply bg-muted/60;
+  }
+
+  .doc-content th {
+    @apply border px-3 py-2 text-left font-semibold;
+  }
+
+  .doc-content td {
+    @apply border px-3 py-2 align-top;
+  }
+
+  .doc-content caption {
+    @apply text-muted-foreground mb-2 text-xs;
+  }
+
+  .doc-content img {
+    @apply my-5 h-auto max-w-full rounded-lg border;
+  }
+
+  .doc-content video {
+    @apply my-5 h-auto max-w-full rounded-lg border;
+  }
+
+  .doc-content figure {
+    @apply my-5;
+  }
+
+  .doc-content figcaption {
+    @apply text-muted-foreground mt-2 text-center text-xs;
+  }
+
+  .doc-content hr {
+    @apply my-8;
+  }
+
+  .doc-content details {
+    @apply bg-muted/40 my-3 rounded-lg border px-4 py-3;
+  }
+
+  .doc-content summary {
+    @apply cursor-pointer font-medium;
+  }
+
+  .doc-content details[open] summary {
+    @apply mb-2;
+  }
+
+  .doc-content abbr {
+    @apply cursor-help underline decoration-dotted underline-offset-4;
+  }
+
+  .doc-content mark {
+    @apply bg-foreground/15 text-foreground rounded px-1;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Impressão de documentação.
+ *
+ * O chrome do app (header, sidebar de departamento, breadcrumb, botões) usa
+ * a classe `print:hidden` do Tailwind diretamente em cada componente. Aqui só
+ * ficam os ajustes que não dá para expressar com um variant utilitário.
+ * ------------------------------------------------------------------------- */
+@media print {
+  /*
+   * Impressão sempre sai no tema claro, mesmo com o app no escuro — senão as
+   * variáveis do .dark vazam pro papel (fundo escuro sem tinta, texto claro
+   * ilegível) porque o navegador não imprime background por padrão.
+   */
+  .dark {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+  }
+
+  @page {
+    margin: 1.5cm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .doc-content {
+    color: #000;
+  }
+
+  .doc-content a {
+    color: #000;
+    text-decoration: underline;
+  }
+
+  .doc-content pre,
+  .doc-content table,
+  .doc-content img,
+  .doc-content video,
+  .doc-content details {
+    break-inside: avoid;
+  }
+
+  .doc-content video {
+    display: none;
+  }
+
+  /*
+   * A tela de responsabilidades é montada com as cores do tema (que podem ser
+   * as do modo escuro), e o navegador não imprime fundo — sem forçar preto
+   * aqui, o papel sairia com texto claro sobre branco.
+   */
+  .doc-responsibilities,
+  .doc-responsibilities * {
+    color: #000;
+  }
+
+  .doc-responsibilities [data-slot="card"] {
+    background: #fff;
+    box-shadow: none;
+    border: 1px solid #ccc;
+    break-inside: avoid;
+  }
+}

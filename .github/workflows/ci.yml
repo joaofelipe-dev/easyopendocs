@@ -1,0 +1,73 @@
+name: CI
+
+# Roda em runners hospedados pelo GitHub — não precisa do servidor.
+# Pega erro de tipo/import antes de qualquer deploy (typecheck + build).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Valores fictícios: o build não conecta de fato no banco, só precisa
+      # que as variáveis existam para o prisma.config.ts e o auth.ts carregarem.
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+      NEXTAUTH_SECRET: "ci-only-secret-not-used-in-production"
+      NEXTAUTH_URL: "http://localhost:3000"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # O build vem primeiro de propósito: `tsconfig.json` inclui
+      # `.next/types/**`, onde o Next gera os tipos `PageProps`/`LayoutProps`
+      # usados pelas páginas. Em checkout limpo esses arquivos ainda não
+      # existem, então `tsc --noEmit` antes do build falha com TS2304.
+      - run: npm run build
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+  # Job separado do "build": não precisa de Postgres nem depende dele, então
+  # os dois rodam em paralelo. Os testes batem num Postgres real do próprio
+  # runner — ver tests/README.md para o porquê de não mockar banco/disco aqui.
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: easyopendocs
+          POSTGRES_PASSWORD: easyopendocs
+          POSTGRES_DB: easyopendocs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U easyopendocs -d easyopendocs_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: "postgresql://easyopendocs:easyopendocs@localhost:5432/easyopendocs_test?schema=public"
+      NEXTAUTH_SECRET: "ci-only-secret-not-used-in-production"
+      NEXTAUTH_URL: "http://localhost:3000"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
