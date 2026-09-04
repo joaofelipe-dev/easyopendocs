@@ -14,6 +14,11 @@ import {
   parseFrontMatter,
   toRelativePath,
 } from "@/lib/content";
+import {
+  SEARCH_INDEX_VERSION,
+  documentPlainText,
+  indexDocumentSearch,
+} from "@/lib/search-index";
 
 /**
  * Indexador do filesystem -> Postgres.
@@ -327,12 +332,16 @@ async function syncDepartmentDocuments(
     const existing = existingBySlug.get(file.slug);
 
     // Checagem barata primeiro: mtime + tamanho iguais => arquivo intocado.
+    // `searchVersion` entra aqui para que uma mudança no indexador force a
+    // releitura mesmo do que não mudou no disco — é o backfill do índice de
+    // busca acontecendo sozinho, sem `?force=1`.
     const unchangedStat =
       existing &&
       !existing.isOrphan &&
       existing.fileMtime.getTime() === file.mtime.getTime() &&
       existing.fileSize === file.size &&
-      existing.filePath === file.relativePath;
+      existing.filePath === file.relativePath &&
+      existing.searchVersion === SEARCH_INDEX_VERSION;
 
     if (unchangedStat && !force) {
       stats.documentsSkipped += 1;
@@ -343,12 +352,18 @@ async function syncDepartmentDocuments(
     const contentHash = hashContent(raw);
 
     if (existing && existing.contentHash === contentHash && !existing.isOrphan && !force) {
-      // Conteúdo idêntico, só o mtime mudou (touch, checkout). Atualiza o
-      // carimbo para que o próximo sync volte a cair no atalho barato.
+      // Conteúdo idêntico, só o mtime mudou (touch, checkout) — ou o índice de
+      // busca ficou para trás. Atualiza o carimbo para que o próximo sync volte
+      // a cair no atalho barato.
       await prisma.document.update({
         where: { id: existing.id },
         data: { fileMtime: file.mtime, fileSize: file.size, filePath: file.relativePath },
       });
+
+      if (existing.searchVersion !== SEARCH_INDEX_VERSION) {
+        await reindexDocument(existing.id, existing.title, existing.description, raw);
+      }
+
       stats.documentsSkipped += 1;
       continue;
     }
@@ -356,6 +371,7 @@ async function syncDepartmentDocuments(
     const { frontMatter } = parseFrontMatter(raw);
     const title = extractTitle(raw, frontMatter, file.slug);
     const description = extractDescription(frontMatter);
+    const plainText = documentPlainText(raw);
 
     if (existing) {
       await prisma.document.update({
@@ -368,11 +384,18 @@ async function syncDepartmentDocuments(
           fileMtime: file.mtime,
           fileSize: file.size,
           isOrphan: false,
+          plainText,
         },
+      });
+      await indexDocumentSearch({
+        documentId: existing.id,
+        title,
+        description,
+        plainText,
       });
       stats.documentsUpdated += 1;
     } else {
-      await prisma.document.create({
+      const created = await prisma.document.create({
         data: {
           departmentId,
           slug: file.slug,
@@ -383,7 +406,14 @@ async function syncDepartmentDocuments(
           fileMtime: file.mtime,
           fileSize: file.size,
           isOrphan: false,
+          plainText,
         },
+      });
+      await indexDocumentSearch({
+        documentId: created.id,
+        title,
+        description,
+        plainText,
       });
       stats.documentsCreated += 1;
     }
@@ -400,6 +430,25 @@ async function syncDepartmentDocuments(
     });
     stats.documentsOrphaned += disappeared.length;
   }
+}
+
+/**
+ * Recalcula só o índice de busca, sem tocar em nada do conteúdo — é o caminho
+ * do documento cujo arquivo não mudou mas cujo `searchVersion` ficou para trás.
+ */
+async function reindexDocument(
+  documentId: string,
+  title: string,
+  description: string | null,
+  raw: string,
+): Promise<void> {
+  const plainText = documentPlainText(raw);
+
+  await prisma.document.update({
+    where: { id: documentId },
+    data: { plainText },
+  });
+  await indexDocumentSearch({ documentId, title, description, plainText });
 }
 
 async function markMissingDepartmentsAsOrphans(

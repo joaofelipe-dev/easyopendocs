@@ -199,6 +199,47 @@ navegador com uma folha de estilo dedicada: cabeçalho, barra lateral,
 breadcrumb e botões de ação somem, sobrando só o conteúdo. Vídeos embutidos
 não têm como imprimir e são ocultados nessa visão.
 
+## Busca
+
+Há um campo de busca no cabeçalho (atalho `/`) e em cada departamento. A busca
+cobre **título, descrição e conteúdo** das documentações — só as que o usuário
+tem permissão de ler.
+
+```
+/busca?q=rotina+de+backup
+/busca?q=backup&departamento=engenharia
+```
+
+- **Acento é opcional.** "manutencao" encontra "manutenção": a configuração de
+  busca `pt_unaccent` (criada pela migration `add_document_search`) é a
+  `portuguese` do Postgres com o dicionário `unaccent` na frente do
+  radicalizador. A extensão `unaccent` é *trusted* desde o PG13, então a
+  migration a cria sem precisar de superuser.
+- **Aceita a sintaxe do `websearch_to_tsquery`:** `"frase exata"`, `-palavra`
+  para excluir, `or` entre termos.
+- **Ranking por peso:** acerto no título vale mais que na descrição, que vale
+  mais que no corpo. Um documento chamado "Rotina de backup" fica acima de um
+  que só cita backup de passagem.
+- **O recorte de acesso vai no SQL**, não depois: o usuário nunca gasta o
+  limite de resultados com documentos que não pode abrir, e um departamento em
+  que ele não tem `document:read` não aparece nem no filtro.
+
+### Como o índice é mantido
+
+O índice é uma coluna `tsvector` em `Document`, preenchida **pelo sync** — o
+mesmo que já lê o arquivo do disco. Só documento que mudou é reprocessado; o
+texto indexado é o que sobra depois do sanitizador, então conteúdo que não é
+exibido também não é encontrável.
+
+Não há passo manual de indexação, nem depois de atualizar um portal que já
+estava rodando: cada documento carrega a versão do indexador que o gerou
+(`searchVersion`), e o sync reprocessa sozinho o que ficou para trás. Trocar
+como o vetor é montado é uma questão de incrementar `SEARCH_INDEX_VERSION` em
+[`src/lib/search-index.ts`](src/lib/search-index.ts) — a reindexação acontece no
+próximo sync, sem `?force=1`.
+
+---
+
 ## Como criar um departamento
 
 **Pelo filesystem:** crie a pasta `content/departamentos/{slug}/`. O nome exibido
@@ -496,6 +537,7 @@ easyopendocs/
     ├── app/
     │   ├── (auth)/login/
     │   ├── (app)/page.tsx                                  # home
+    │   ├── (app)/busca/                                     # busca full-text
     │   ├── (app)/sem-acesso/
     │   ├── (app)/departamentos/[slug]/                     # layout + sidebar
     │   ├── (app)/departamentos/[slug]/responsabilidades/   # mapa + edição
@@ -512,6 +554,8 @@ easyopendocs/
     │   ├── permissions.ts        # catálogo compartilhado com o seed
     │   ├── content.ts            # slugs, caminhos, front-matter, template
     │   ├── content-sync.ts       # indexador filesystem -> Postgres
+    │   ├── search.ts             # consulta da busca (respeita o RBAC)
+    │   ├── search-index.ts       # escrita do índice — quem chama é o sync
     │   ├── department-responsibilities.ts       # schema e regras do mapa
     │   ├── department-responsibilities-file.ts  # leitura/escrita do JSON
     │   ├── document-render.ts    # sanitização + âncoras + índice
@@ -525,7 +569,7 @@ tests/
 ├── setup.ts                   # tmpdir de CONTENT_ROOT + truncate por teste
 ├── helpers/db.ts               # resetDatabase() + fixtures de rbac-seed.ts
 ├── stubs/server-only.ts       # alias p/ importar módulos "server-only" fora do Next
-├── lib/                       # sanitize, rbac, content-sync, department-responsibilities
+├── lib/                       # sanitize, rbac, content-sync, search, department-responsibilities
 └── actions/                   # server actions fim a fim
 ```
 
@@ -544,6 +588,11 @@ tests/
   `EBADENGINE`, e a quebra aparece bem depois, no `next build`, como
   `TypeError: webidl.util.markAsUncloneable is not a function` ao coletar dados
   de página. O `engines` do `package.json` declara isso para o npm avisar cedo.
+- **O seed roda com `--conditions=react-server`** (`prisma.config.ts`). O
+  pacote `server-only` só é neutralizado por essa condição de resolução, que o
+  bundler do Next aplica sozinho nas compilações de servidor mas o `tsx` não —
+  e desde a busca o sync alcança o sanitizador, que é `server-only`. Os testes
+  resolvem o mesmo problema por um alias (`tests/stubs/server-only.ts`).
 - `forbidden()` do Next exige a flag experimental `authInterrupts`; para não
   depender dela num caminho de autorização, o app redireciona para `/sem-acesso`.
 

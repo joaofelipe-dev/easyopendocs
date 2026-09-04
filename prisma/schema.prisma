@@ -122,6 +122,18 @@ model Document {
   fileMtime    DateTime
   fileSize     Int      @default(0)
   isOrphan     Boolean  @default(false)
+  /// Texto puro do corpo já sanitizado, extraído no sync. Existe para
+  /// alimentar a busca e para o `ts_headline` ter de onde tirar o trecho.
+  plainText    String   @default("")
+  /// tsvector com pesos (título A, descrição B, corpo C). Coluna comum, não
+  /// gerada: `GENERATED ALWAYS AS` exigiria expressão IMMUTABLE e não é
+  /// representável aqui, então viraria drift a cada `migrate dev`. Quem
+  /// preenche é o sync, por SQL cru — ver src/lib/search.ts.
+  searchVector Unsupported("tsvector")?
+  /// Versão do indexador que gerou o vetor acima. Quando não bate com
+  /// SEARCH_INDEX_VERSION, o sync reprocessa o arquivo mesmo que o mtime e o
+  /// hash não tenham mudado — é o que faz o backfill acontecer sozinho.
+  searchVersion Int     @default(0)
   createdById  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -131,6 +143,7 @@ model Document {
 
   @@unique([departmentId, slug])
   @@index([departmentId, isOrphan])
+  @@index([searchVector], type: Gin)
 }
 
 // ---------------------------------------------------------------------------
