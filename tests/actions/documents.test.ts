@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { assignRole, seedPermissionsAndRoles, upsertUser } from "@/lib/rbac-seed";
 import {
   createDocumentAction,
+  markDocumentReviewedAction,
   restoreDocumentVersionAction,
   updateDocumentAction,
   type DocumentFormState,
@@ -332,5 +333,165 @@ describe("histórico pelas server actions", () => {
 
     expectRedirectTo(error, "/sem-acesso");
     expect(await fs.readFile(arquivo, "utf8")).toBe(antes);
+  });
+});
+
+describe("ciclo de revisão pelas server actions", () => {
+  beforeEach(async () => {
+    await fs.rm(contentRoot(), { recursive: true, force: true });
+    await fs.mkdir(contentRoot(), { recursive: true });
+    await createDepartmentOnDisk();
+    await seedPermissionsAndRoles();
+    vi.mocked(auth).mockReset();
+  });
+
+  const ARQUIVO = "backup.html";
+
+  function caminho(): string {
+    return path.join(contentRoot(), DEPARTMENT_SLUG, ARQUIVO);
+  }
+
+  async function escreverDocumento(frontMatter: string[]): Promise<void> {
+    await fs.writeFile(
+      caminho(),
+      [...frontMatter, "<article><p>conteúdo original</p></article>", ""].join("\n"),
+      "utf8",
+    );
+    await syncContent({ trigger: "MANUAL", force: true });
+  }
+
+  async function loginAsEditor(): Promise<string> {
+    const userId = await upsertUser({
+      name: "Ana Editora",
+      email: "ana@exemplo.com",
+      password: "senha-qualquer",
+    });
+    const editorRole = await prisma.role.findUniqueOrThrow({ where: { name: "Editor" } });
+    await assignRole(userId, DEPARTMENT_SLUG, editorRole.id);
+    vi.mocked(auth).mockResolvedValue({ user: { id: userId } } as never);
+    return userId;
+  }
+
+  it("editar pela UI preserva reviewEvery e reviewedAt", async () => {
+    // O caso que faria a feature se autodestruir: a tela remonta o cabeçalho
+    // a partir do formulário, então sem preservar o que ela não conhece, a
+    // primeira edição desligaria o ciclo de revisão do documento.
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- reviewEvery: 180 -->",
+      "<!-- reviewedAt: 2026-01-15 -->",
+    ]);
+
+    const error = await updateDocumentAction(
+      INITIAL_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "backup",
+        title: "Rotina de backup",
+        bodyHtml: "<p>conteúdo revisado</p>",
+      }),
+    ).catch((e) => e);
+    expectRedirectTo(error, `/departamentos/${DEPARTMENT_SLUG}/backup`);
+
+    const noDisco = await fs.readFile(caminho(), "utf8");
+    expect(noDisco).toContain("<!-- reviewEvery: 180 -->");
+    expect(noDisco).toContain("<!-- reviewedAt: 2026-01-15 -->");
+    expect(noDisco).toContain("conteúdo revisado");
+
+    const document = await prisma.document.findFirstOrThrow({ where: { slug: "backup" } });
+    expect(document.reviewIntervalDays).toBe(180);
+  });
+
+  it("editar pela UI preserva front-matter que a tela nem conhece", async () => {
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- chaveDeAlguem: valor qualquer -->",
+    ]);
+
+    await updateDocumentAction(
+      INITIAL_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "backup",
+        title: "Rotina de backup",
+        bodyHtml: "<p>x</p>",
+      }),
+    ).catch(() => undefined);
+
+    expect(await fs.readFile(caminho(), "utf8")).toContain(
+      "<!-- chaveDeAlguem: valor qualquer -->",
+    );
+  });
+
+  it("marcar como revisada grava a data de hoje no arquivo e reindexa", async () => {
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- reviewEvery: 30 -->",
+      "<!-- reviewedAt: 2020-01-01 -->",
+    ]);
+
+    const result = await markDocumentReviewedAction(
+      INITIAL_ACTION_STATE,
+      buildFormData({ departmentSlug: DEPARTMENT_SLUG, documentSlug: "backup" }),
+    );
+
+    expect(result.ok).toBe(true);
+
+    const hoje = new Date().toISOString().slice(0, 10);
+    const noDisco = await fs.readFile(caminho(), "utf8");
+    expect(noDisco).toContain(`<!-- reviewedAt: ${hoje} -->`);
+    expect(noDisco).not.toContain("2020-01-01");
+    // Revisar não é editar: o resto do arquivo não pode ser reformatado.
+    expect(noDisco).toContain("<!-- reviewEvery: 30 -->");
+    expect(noDisco).toContain("<article><p>conteúdo original</p></article>");
+
+    const document = await prisma.document.findFirstOrThrow({ where: { slug: "backup" } });
+    expect(document.lastReviewedAt?.toISOString().slice(0, 10)).toBe(hoje);
+  });
+
+  it("marcar como revisada acrescenta a chave quando ela não existe", async () => {
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- reviewEvery: 30 -->",
+    ]);
+
+    await markDocumentReviewedAction(
+      INITIAL_ACTION_STATE,
+      buildFormData({ departmentSlug: DEPARTMENT_SLUG, documentSlug: "backup" }),
+    );
+
+    const noDisco = await fs.readFile(caminho(), "utf8");
+    expect(noDisco).toContain("<!-- reviewedAt:");
+    expect(noDisco).toContain("<!-- title: Rotina de backup -->");
+  });
+
+  it("quem só tem document:read não marca como revisada", async () => {
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- reviewEvery: 30 -->",
+    ]);
+    const antes = await fs.readFile(caminho(), "utf8");
+
+    const viewerId = await upsertUser({
+      name: "Carlos Leitor",
+      email: "carlos@exemplo.com",
+      password: "senha-qualquer",
+    });
+    const viewerRole = await prisma.role.findUniqueOrThrow({ where: { name: "Viewer" } });
+    await assignRole(viewerId, DEPARTMENT_SLUG, viewerRole.id);
+    vi.mocked(auth).mockResolvedValue({ user: { id: viewerId } } as never);
+
+    const error = await markDocumentReviewedAction(
+      INITIAL_ACTION_STATE,
+      buildFormData({ departmentSlug: DEPARTMENT_SLUG, documentSlug: "backup" }),
+    ).catch((e) => e);
+
+    expectRedirectTo(error, "/sem-acesso");
+    expect(await fs.readFile(caminho(), "utf8")).toBe(antes);
   });
 });

@@ -100,6 +100,10 @@ model Department {
   path        String
   /// Pasta sumiu do filesystem: some da UI mas preserva permissões e histórico.
   isOrphan    Boolean  @default(false)
+  /// Padrão de dias entre revisões para os documentos deste departamento, do
+  /// `reviewEveryDays` do `_departamento.json`. O front-matter do documento
+  /// sobrepõe; sem nenhum dos dois, o departamento fica fora do ciclo.
+  reviewIntervalDays Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -135,6 +139,11 @@ model Document {
   /// SEARCH_INDEX_VERSION, o sync reprocessa o arquivo mesmo que o mtime e o
   /// hash não tenham mudado — é o que faz o backfill acontecer sozinho.
   searchVersion Int     @default(0)
+  /// Dias entre revisões, do front-matter `reviewEvery`. O arquivo continua
+  /// sendo a fonte: estes dois campos são índice, preenchidos pelo sync.
+  reviewIntervalDays Int?
+  /// Data da última revisão, do front-matter `reviewedAt`.
+  lastReviewedAt DateTime?
   createdById  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

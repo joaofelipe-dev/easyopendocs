@@ -9,18 +9,21 @@ import { z } from "zod";
 import {
   departmentDir,
   documentFile,
+  frontMatterLines,
   hashContent,
   isValidSlug,
   renderDocumentFile,
   slugify,
   toRelativePath,
+  withFrontMatter,
 } from "@/lib/content";
-import { syncContent } from "@/lib/content-sync";
+import { readDocumentSource, syncContent } from "@/lib/content-sync";
 import { claimDocumentVersion, getDocumentVersion } from "@/lib/document-version";
+import { formatReviewedAt } from "@/lib/review-cycle";
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, getCurrentUser, requireDepartmentAccess } from "@/lib/rbac";
 import { sanitizeDocumentHtml } from "@/lib/sanitize";
-import { actionError, type ActionState } from "@/lib/action-state";
+import { actionError, actionSuccess, type ActionState } from "@/lib/action-state";
 
 // Arquivo "use server": só pode exportar funções async (tipos são apagados na
 // compilação, então `export type` é permitido).
@@ -217,6 +220,13 @@ export async function updateDocumentAction(
 
   const { title, description, bodyHtml } = parsed.data;
 
+  // O cabeçalho é remontado a partir do formulário, então o front-matter que a
+  // tela não conhece precisa ser relido do arquivo e devolvido — senão editar
+  // um documento apagaria o `reviewEvery` dele, e o ciclo de revisão se
+  // desligaria sozinho no primeiro salvamento.
+  const currentSource = await readDocumentSource(existing.filePath);
+  const preserve = currentSource ? frontMatterLines(currentSource) : [];
+
   // O nome do arquivo (e portanto a URL) não muda ao editar: renomear quebraria
   // todo link já compartilhado. Só o front-matter `title` é atualizado.
   const fileContents = renderDocumentFile({
@@ -225,6 +235,7 @@ export async function updateDocumentAction(
     bodyHtml: sanitizeDocumentHtml(bodyHtml),
     author: user.name,
     createdAt: existing.createdAt,
+    preserve,
   });
 
   try {
@@ -367,6 +378,65 @@ export async function restoreDocumentVersionAction(
 
   revalidatePath("/", "layout");
   redirect(`/departamentos/${access.department.slug}/${documentSlug}`);
+}
+
+// ---------------------------------------------------------------------------
+// Ciclo de revisão
+// ---------------------------------------------------------------------------
+
+/**
+ * Carimba a data de hoje em `reviewedAt`, no próprio arquivo.
+ *
+ * Grava a chave no lugar, preservando o resto do arquivo byte a byte, em vez
+ * de remontar o documento: revisar não é editar, e uma revisão não deve
+ * reformatar o HTML de quem escreveu à mão.
+ */
+export async function markDocumentReviewedAction(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const departmentSlug = String(formData.get("departmentSlug") ?? "");
+  const documentSlug = String(formData.get("documentSlug") ?? "");
+
+  if (!isValidSlug(departmentSlug) || !isValidSlug(documentSlug)) {
+    return actionError("Documento inválido.");
+  }
+
+  const { access } = await requireDepartmentAccess(
+    departmentSlug,
+    PERMISSIONS.documentEdit,
+  );
+
+  const existing = await prisma.document.findUnique({
+    where: {
+      departmentId_slug: { departmentId: access.department.id, slug: documentSlug },
+    },
+  });
+
+  if (!existing || existing.isOrphan) {
+    return actionError("Esta documentação não existe mais.");
+  }
+
+  const source = await readDocumentSource(existing.filePath);
+  if (source === null) {
+    return actionError("O arquivo desta documentação não pôde ser lido.");
+  }
+
+  const updated = withFrontMatter(source, "reviewedAt", formatReviewedAt(new Date()));
+
+  try {
+    await fs.writeFile(documentFile(departmentSlug, documentSlug), updated, "utf8");
+  } catch (error) {
+    console.error("[markDocumentReviewedAction] falha ao gravar arquivo:", error);
+    return actionError(
+      "Não foi possível gravar o arquivo. Verifique as permissões da pasta.",
+    );
+  }
+
+  await syncContent({ trigger: "DOCUMENT_CREATE", force: true });
+
+  revalidatePath("/", "layout");
+  return actionSuccess("Documentação marcada como revisada.");
 }
 
 // ---------------------------------------------------------------------------
