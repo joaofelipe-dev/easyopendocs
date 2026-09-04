@@ -8,7 +8,15 @@ import { contentRoot } from "@/lib/content";
 import { syncContent } from "@/lib/content-sync";
 import { prisma } from "@/lib/prisma";
 import { assignRole, seedPermissionsAndRoles, upsertUser } from "@/lib/rbac-seed";
-import { createDocumentAction, type DocumentFormState } from "@/actions/documents";
+import {
+  createDocumentAction,
+  markDocumentReviewedAction,
+  restoreDocumentVersionAction,
+  updateDocumentAction,
+  type DocumentFormState,
+} from "@/actions/documents";
+import { listDocumentVersions } from "@/lib/document-version";
+import { INITIAL_ACTION_STATE } from "@/lib/action-state";
 
 /**
  * Teste de ponta a ponta de uma server action, contra banco e disco reais.
@@ -151,5 +159,339 @@ describe("createDocumentAction", () => {
     // getCurrentUser() devolve null -> requireUser() manda para /login, não
     // para /sem-acesso (o usuário nem chega a ser reconhecido como sessão).
     expectRedirectTo(error, "/login");
+  });
+});
+
+describe("histórico pelas server actions", () => {
+  beforeEach(async () => {
+    await fs.rm(contentRoot(), { recursive: true, force: true });
+    await fs.mkdir(contentRoot(), { recursive: true });
+    await createDepartmentOnDisk();
+    await seedPermissionsAndRoles();
+    vi.mocked(auth).mockReset();
+  });
+
+  async function loginAsEditor(name = "Ana Editora"): Promise<string> {
+    const userId = await upsertUser({
+      name,
+      email: `${name.split(" ")[0].toLowerCase()}@exemplo.com`,
+      password: "senha-qualquer",
+    });
+    const editorRole = await prisma.role.findUniqueOrThrow({ where: { name: "Editor" } });
+    await assignRole(userId, DEPARTMENT_SLUG, editorRole.id);
+    vi.mocked(auth).mockResolvedValue({ user: { id: userId } } as never);
+    return userId;
+  }
+
+  async function createDoc(title: string, bodyHtml: string): Promise<void> {
+    const error = await createDocumentAction(
+      INITIAL_STATE,
+      buildFormData({ departmentSlug: DEPARTMENT_SLUG, title, bodyHtml }),
+    ).catch((e) => e);
+    expectRedirectTo(error, `/departamentos/${DEPARTMENT_SLUG}`);
+  }
+
+  it("criar pela UI assina a v1 com o autor e a origem", async () => {
+    await loginAsEditor();
+    await createDoc("Rotina de backup", "<p>versão inicial</p>");
+
+    const document = await prisma.document.findFirstOrThrow({
+      where: { slug: "rotina-de-backup" },
+    });
+    const versions = await listDocumentVersions(document.id);
+
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({
+      version: 1,
+      source: "UI_CREATE",
+      authorName: "Ana Editora",
+    });
+  });
+
+  it("editar pela UI cria uma v2 assinada, sem versionar os outros documentos", async () => {
+    await loginAsEditor();
+    await createDoc("Rotina de backup", "<p>versão inicial</p>");
+    await createDoc("Outro documento", "<p>não mexi nele</p>");
+
+    const error = await updateDocumentAction(
+      INITIAL_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "rotina-de-backup",
+        title: "Rotina de backup",
+        bodyHtml: "<p>versão revisada</p>",
+      }),
+    ).catch((e) => e);
+    expectRedirectTo(error, `/departamentos/${DEPARTMENT_SLUG}/rotina-de-backup`);
+
+    const editado = await prisma.document.findFirstOrThrow({
+      where: { slug: "rotina-de-backup" },
+    });
+    const versions = await listDocumentVersions(editado.id);
+
+    expect(versions.map((v) => v.version)).toEqual([2, 1]);
+    expect(versions[0]).toMatchObject({ source: "UI_EDIT", authorName: "Ana Editora" });
+
+    // A ação dispara um sync com `force`, que passa por todo arquivo do disco.
+    const intocado = await prisma.document.findFirstOrThrow({
+      where: { slug: "outro-documento" },
+    });
+    expect(await listDocumentVersions(intocado.id)).toHaveLength(1);
+  });
+
+  it("restaurar devolve o arquivo byte a byte e cria uma versão nova", async () => {
+    await loginAsEditor();
+    await createDoc("Rotina de backup", "<p>versão inicial</p>");
+
+    const arquivo = path.join(contentRoot(), DEPARTMENT_SLUG, "rotina-de-backup.html");
+    const original = await fs.readFile(arquivo, "utf8");
+
+    await updateDocumentAction(
+      INITIAL_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "rotina-de-backup",
+        title: "Rotina de backup",
+        bodyHtml: "<p>versão revisada</p>",
+      }),
+    ).catch(() => undefined);
+
+    const error = await restoreDocumentVersionAction(
+      INITIAL_ACTION_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "rotina-de-backup",
+        version: "1",
+      }),
+    ).catch((e) => e);
+    expectRedirectTo(error, `/departamentos/${DEPARTMENT_SLUG}/rotina-de-backup`);
+
+    expect(await fs.readFile(arquivo, "utf8")).toBe(original);
+
+    const document = await prisma.document.findFirstOrThrow({
+      where: { slug: "rotina-de-backup" },
+    });
+    const versions = await listDocumentVersions(document.id);
+
+    // Restaurar avança em vez de voltar: a v2 continua no histórico e pode
+    // ser restaurada de volta.
+    expect(versions.map((v) => v.version)).toEqual([3, 2, 1]);
+    expect(versions[0]).toMatchObject({ source: "RESTORE", authorName: "Ana Editora" });
+    expect(versions[0].contentHash).toBe(versions[2].contentHash);
+  });
+
+  it("restaurar a versão já publicada é recusado, sem tocar no arquivo", async () => {
+    await loginAsEditor();
+    await createDoc("Rotina de backup", "<p>versão inicial</p>");
+
+    const result = await restoreDocumentVersionAction(
+      INITIAL_ACTION_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "rotina-de-backup",
+        version: "1",
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("já é a versão publicada");
+  });
+
+  it("quem só tem document:read não restaura", async () => {
+    await loginAsEditor();
+    await createDoc("Rotina de backup", "<p>versão inicial</p>");
+    await updateDocumentAction(
+      INITIAL_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "rotina-de-backup",
+        title: "Rotina de backup",
+        bodyHtml: "<p>versão revisada</p>",
+      }),
+    ).catch(() => undefined);
+
+    const viewerId = await upsertUser({
+      name: "Carlos Leitor",
+      email: "carlos@exemplo.com",
+      password: "senha-qualquer",
+    });
+    const viewerRole = await prisma.role.findUniqueOrThrow({ where: { name: "Viewer" } });
+    await assignRole(viewerId, DEPARTMENT_SLUG, viewerRole.id);
+    vi.mocked(auth).mockResolvedValue({ user: { id: viewerId } } as never);
+
+    const arquivo = path.join(contentRoot(), DEPARTMENT_SLUG, "rotina-de-backup.html");
+    const antes = await fs.readFile(arquivo, "utf8");
+
+    const error = await restoreDocumentVersionAction(
+      INITIAL_ACTION_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "rotina-de-backup",
+        version: "1",
+      }),
+    ).catch((e) => e);
+
+    expectRedirectTo(error, "/sem-acesso");
+    expect(await fs.readFile(arquivo, "utf8")).toBe(antes);
+  });
+});
+
+describe("ciclo de revisão pelas server actions", () => {
+  beforeEach(async () => {
+    await fs.rm(contentRoot(), { recursive: true, force: true });
+    await fs.mkdir(contentRoot(), { recursive: true });
+    await createDepartmentOnDisk();
+    await seedPermissionsAndRoles();
+    vi.mocked(auth).mockReset();
+  });
+
+  const ARQUIVO = "backup.html";
+
+  function caminho(): string {
+    return path.join(contentRoot(), DEPARTMENT_SLUG, ARQUIVO);
+  }
+
+  async function escreverDocumento(frontMatter: string[]): Promise<void> {
+    await fs.writeFile(
+      caminho(),
+      [...frontMatter, "<article><p>conteúdo original</p></article>", ""].join("\n"),
+      "utf8",
+    );
+    await syncContent({ trigger: "MANUAL", force: true });
+  }
+
+  async function loginAsEditor(): Promise<string> {
+    const userId = await upsertUser({
+      name: "Ana Editora",
+      email: "ana@exemplo.com",
+      password: "senha-qualquer",
+    });
+    const editorRole = await prisma.role.findUniqueOrThrow({ where: { name: "Editor" } });
+    await assignRole(userId, DEPARTMENT_SLUG, editorRole.id);
+    vi.mocked(auth).mockResolvedValue({ user: { id: userId } } as never);
+    return userId;
+  }
+
+  it("editar pela UI preserva reviewEvery e reviewedAt", async () => {
+    // O caso que faria a feature se autodestruir: a tela remonta o cabeçalho
+    // a partir do formulário, então sem preservar o que ela não conhece, a
+    // primeira edição desligaria o ciclo de revisão do documento.
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- reviewEvery: 180 -->",
+      "<!-- reviewedAt: 2026-01-15 -->",
+    ]);
+
+    const error = await updateDocumentAction(
+      INITIAL_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "backup",
+        title: "Rotina de backup",
+        bodyHtml: "<p>conteúdo revisado</p>",
+      }),
+    ).catch((e) => e);
+    expectRedirectTo(error, `/departamentos/${DEPARTMENT_SLUG}/backup`);
+
+    const noDisco = await fs.readFile(caminho(), "utf8");
+    expect(noDisco).toContain("<!-- reviewEvery: 180 -->");
+    expect(noDisco).toContain("<!-- reviewedAt: 2026-01-15 -->");
+    expect(noDisco).toContain("conteúdo revisado");
+
+    const document = await prisma.document.findFirstOrThrow({ where: { slug: "backup" } });
+    expect(document.reviewIntervalDays).toBe(180);
+  });
+
+  it("editar pela UI preserva front-matter que a tela nem conhece", async () => {
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- chaveDeAlguem: valor qualquer -->",
+    ]);
+
+    await updateDocumentAction(
+      INITIAL_STATE,
+      buildFormData({
+        departmentSlug: DEPARTMENT_SLUG,
+        documentSlug: "backup",
+        title: "Rotina de backup",
+        bodyHtml: "<p>x</p>",
+      }),
+    ).catch(() => undefined);
+
+    expect(await fs.readFile(caminho(), "utf8")).toContain(
+      "<!-- chaveDeAlguem: valor qualquer -->",
+    );
+  });
+
+  it("marcar como revisada grava a data de hoje no arquivo e reindexa", async () => {
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- reviewEvery: 30 -->",
+      "<!-- reviewedAt: 2020-01-01 -->",
+    ]);
+
+    const result = await markDocumentReviewedAction(
+      INITIAL_ACTION_STATE,
+      buildFormData({ departmentSlug: DEPARTMENT_SLUG, documentSlug: "backup" }),
+    );
+
+    expect(result.ok).toBe(true);
+
+    const hoje = new Date().toISOString().slice(0, 10);
+    const noDisco = await fs.readFile(caminho(), "utf8");
+    expect(noDisco).toContain(`<!-- reviewedAt: ${hoje} -->`);
+    expect(noDisco).not.toContain("2020-01-01");
+    // Revisar não é editar: o resto do arquivo não pode ser reformatado.
+    expect(noDisco).toContain("<!-- reviewEvery: 30 -->");
+    expect(noDisco).toContain("<article><p>conteúdo original</p></article>");
+
+    const document = await prisma.document.findFirstOrThrow({ where: { slug: "backup" } });
+    expect(document.lastReviewedAt?.toISOString().slice(0, 10)).toBe(hoje);
+  });
+
+  it("marcar como revisada acrescenta a chave quando ela não existe", async () => {
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- reviewEvery: 30 -->",
+    ]);
+
+    await markDocumentReviewedAction(
+      INITIAL_ACTION_STATE,
+      buildFormData({ departmentSlug: DEPARTMENT_SLUG, documentSlug: "backup" }),
+    );
+
+    const noDisco = await fs.readFile(caminho(), "utf8");
+    expect(noDisco).toContain("<!-- reviewedAt:");
+    expect(noDisco).toContain("<!-- title: Rotina de backup -->");
+  });
+
+  it("quem só tem document:read não marca como revisada", async () => {
+    await loginAsEditor();
+    await escreverDocumento([
+      "<!-- title: Rotina de backup -->",
+      "<!-- reviewEvery: 30 -->",
+    ]);
+    const antes = await fs.readFile(caminho(), "utf8");
+
+    const viewerId = await upsertUser({
+      name: "Carlos Leitor",
+      email: "carlos@exemplo.com",
+      password: "senha-qualquer",
+    });
+    const viewerRole = await prisma.role.findUniqueOrThrow({ where: { name: "Viewer" } });
+    await assignRole(viewerId, DEPARTMENT_SLUG, viewerRole.id);
+    vi.mocked(auth).mockResolvedValue({ user: { id: viewerId } } as never);
+
+    const error = await markDocumentReviewedAction(
+      INITIAL_ACTION_STATE,
+      buildFormData({ departmentSlug: DEPARTMENT_SLUG, documentSlug: "backup" }),
+    ).catch((e) => e);
+
+    expectRedirectTo(error, "/sem-acesso");
+    expect(await fs.readFile(caminho(), "utf8")).toBe(antes);
   });
 });

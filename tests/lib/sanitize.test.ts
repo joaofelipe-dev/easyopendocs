@@ -122,10 +122,28 @@ describe("htmlToPlainText", () => {
     // script que nunca deveria ter sido salvo.
     const text = htmlToPlainText("<p>antes</p><script>alert(1)</script><p>depois</p>");
 
-    // Sem espaço entre as palavras: não há whitespace nenhum na entrada, e
-    // remover tags não insere separador — só o próprio conteúdo do script
-    // some por completo.
-    expect(text).toBe("antesdepois");
+    expect(text).toBe("antes depois");
     expect(text).not.toContain("alert");
+  });
+
+  it("separa blocos vizinhos em vez de colar as palavras", () => {
+    // `<p>alfa</p><p>beta</p>` já virou "alfabeta" aqui: cosmético numa
+    // prévia, mas o índice de busca passou a usar esta mesma função, e uma
+    // palavra inventada dessas é indexada como se estivesse no documento.
+    expect(htmlToPlainText("<p>alfa</p><p>beta</p>")).toBe("alfa beta");
+    expect(htmlToPlainText("<ul><li>um</li><li>dois</li></ul>")).toBe("um dois");
+  });
+
+  it("decodifica as entidades que o sanitizador reescapa", () => {
+    // A saída do DOMPurify ainda é HTML: sem decodificar, "P&D" viraria
+    // "P&amp;D" e o índice ganharia um token "amp" que ninguém vai procurar.
+    expect(htmlToPlainText("<p>P&amp;D</p>")).toBe("P&D");
+    expect(htmlToPlainText("<p>maçã &lt;3</p>")).toBe("maçã <3");
+  });
+
+  it("indexa o documento inteiro quando o corte é desligado", () => {
+    const longo = htmlToPlainText(`<p>${"a".repeat(300)}</p>`, null);
+    expect(longo).toHaveLength(300);
+    expect(longo.endsWith("…")).toBe(false);
   });
 });

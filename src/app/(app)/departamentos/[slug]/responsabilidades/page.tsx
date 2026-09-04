@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronRight, ListChecks, Pencil, Plus, TriangleAlert } from "lucide-react";
+import { ChevronRight, ListChecks, Pencil, Plus, Share2, TriangleAlert } from "lucide-react";
 
 import { DepartmentResponsibilitiesView } from "@/components/department-responsibilities-view";
 import { BackLink } from "@/components/back-link";
@@ -84,6 +84,12 @@ export default async function DepartmentResponsibilitiesPage({
         {responsibilities ? (
           <div className="print:hidden flex flex-wrap items-center gap-2">
             <PrintButton />
+            <Button asChild variant="outline" size="sm">
+              <Link href={`${base}/diagrama`}>
+                <Share2 />
+                Diagrama
+              </Link>
+            </Button>
             {canManage ? (
               <Button asChild size="sm">
                 <Link href={`${base}/responsabilidades/editar`}>
