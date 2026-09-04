@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FileText, FilePlus2, Inbox } from "lucide-react";
 
+import { SearchBox } from "@/components/search-box";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,6 +81,14 @@ export default async function DepartmentPage({
           </Button>
         ) : null}
       </header>
+
+      {documents.length > 0 ? (
+        <SearchBox
+          departmentSlug={access.department.slug}
+          placeholder={`Buscar em ${access.department.name}…`}
+          className="mb-6 max-w-md"
+        />
+      ) : null}
 
       {documents.length === 0 ? (
         <Card className="border-dashed">

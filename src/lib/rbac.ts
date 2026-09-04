@@ -121,6 +121,42 @@ export async function listAccessibleDepartments(
   }));
 }
 
+export type ReadableDepartment = {
+  id: string;
+  slug: string;
+  name: string;
+};
+
+/**
+ * Departamentos em que o usuário pode LER documentação — recorte mais estrito
+ * que `listAccessibleDepartments`, que só exige ter algum papel. A busca usa
+ * este: um resultado já revela título e trecho do documento, então quem não
+ * tem `document:read` não pode nem chegar na lista.
+ */
+export async function listReadableDepartments(
+  user: CurrentUser,
+): Promise<ReadableDepartment[]> {
+  return prisma.department.findMany({
+    where: user.isSuperAdmin
+      ? { isOrphan: false }
+      : {
+          isOrphan: false,
+          userRoles: {
+            some: {
+              userId: user.id,
+              role: {
+                permissions: {
+                  some: { permission: { key: PERMISSIONS.documentRead } },
+                },
+              },
+            },
+          },
+        },
+    orderBy: { name: "asc" },
+    select: { id: true, slug: true, name: true },
+  });
+}
+
 /**
  * Resolve o que o usuário pode fazer dentro de um departamento.
  * Retorna null quando o departamento não existe ou o usuário não tem acesso.
