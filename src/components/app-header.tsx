@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BookMarked, KeyRound, LogOut, Shield } from "lucide-react";
 
 import { logoutAction } from "@/actions/session";
+import { SearchBox } from "@/components/search-box";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +37,9 @@ export function AppHeader({ user }: { user: CurrentUser }) {
           <span className="sm:hidden">Docs</span>
         </Link>
 
-        <div className="flex-1" />
+        <div className="flex flex-1 justify-center px-2">
+          <SearchBox className="w-full max-w-sm" />
+        </div>
 
         {user.isSuperAdmin ? (
           <Button asChild variant="ghost" size="sm">

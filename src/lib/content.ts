@@ -139,6 +139,53 @@ export function extractDescription(
   return null;
 }
 
+/**
+ * As linhas de front-matter VERBATIM, na ordem em que aparecem.
+ *
+ * Existe separado de `parseFrontMatter` porque aquele normaliza a chave para
+ * minúsculas — o que serve para ler, mas não para regravar: reescrever
+ * `reviewEvery` como `revieweevery` seria uma mudança silenciosa no arquivo do
+ * usuário. Aqui a linha volta exatamente como estava.
+ */
+export function frontMatterLines(
+  html: string,
+): Array<{ key: string; line: string }> {
+  const lines: Array<{ key: string; line: string }> = [];
+  let rest = html;
+
+  for (;;) {
+    const match = FRONT_MATTER_LINE.exec(rest);
+    if (!match) break;
+    lines.push({ key: match[1].toLowerCase(), line: match[0].trim() });
+    rest = rest.slice(match[0].length);
+  }
+
+  return lines;
+}
+
+/**
+ * Devolve o arquivo com uma chave de front-matter definida: substitui a linha
+ * no lugar se ela já existir, senão acrescenta ao fim do cabeçalho. Preserva
+ * todo o resto do arquivo byte a byte — é o que uma ação pontual como "marcar
+ * como revisada" precisa, em vez de remontar o documento inteiro.
+ */
+export function withFrontMatter(
+  html: string,
+  key: string,
+  value: string,
+): string {
+  const line = `<!-- ${key}: ${escapeComment(value)} -->`;
+  const existing = frontMatterLines(html);
+  const match = existing.find((entry) => entry.key === key.toLowerCase());
+
+  if (match) return html.replace(match.line, line);
+
+  if (existing.length === 0) return `${line}\n${html}`;
+
+  const last = existing[existing.length - 1].line;
+  return html.replace(last, `${last}\n${line}`);
+}
+
 export function hashContent(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
@@ -156,12 +203,27 @@ function escapeComment(value: string): string {
  * Monta o arquivo `.html` no mesmo padrão descrito em content/TEMPLATE.md,
  * para que docs criadas pela UI sejam indistinguíveis das criadas à mão.
  */
+/** Chaves que `renderDocumentFile` monta sozinho, a partir do formulário. */
+const MANAGED_FRONT_MATTER_KEYS = new Set([
+  "title",
+  "description",
+  "author",
+  "createdat",
+]);
+
 export function renderDocumentFile(input: {
   title: string;
   description?: string | null;
   bodyHtml: string;
   author?: string | null;
   createdAt?: Date;
+  /**
+   * Front-matter do arquivo atual (de `frontMatterLines`), para que uma edição
+   * pela UI não apague chaves que a tela não conhece — `reviewEvery`,
+   * `reviewedAt` e qualquer outra que alguém tenha posto à mão. Sem isto, uma
+   * única edição pela tela desliga o ciclo de revisão do documento.
+   */
+  preserve?: ReadonlyArray<{ key: string; line: string }>;
 }): string {
   const createdAt = input.createdAt ?? new Date();
   const lines = [
@@ -175,6 +237,11 @@ export function renderDocumentFile(input: {
     lines.push(`<!-- author: ${escapeComment(input.author)} -->`);
   }
   lines.push(`<!-- createdAt: ${createdAt.toISOString()} -->`);
+
+  for (const entry of input.preserve ?? []) {
+    if (MANAGED_FRONT_MATTER_KEYS.has(entry.key)) continue;
+    lines.push(entry.line);
+  }
 
   const body = input.bodyHtml.trim();
   const hasArticle = /^<article[\s>]/i.test(body);

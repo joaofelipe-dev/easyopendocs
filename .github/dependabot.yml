@@ -34,6 +34,14 @@ updates:
       - dependency-name: "@prisma/adapter-pg"
         update-types: [version-update:semver-major]
 
+      # @types/node acompanha o runtime, não a última versão publicada: o
+      # `engines` do package.json exige Node >=22.19, então os tipos ficam na
+      # linha 22.x. Bloquear por `versions` e não por `update-types` é
+      # proposital — sair de 20 para 22 também é um major, e esse a gente quer.
+      # Ao subir o runtime (24, 26...), mova este teto junto.
+      - dependency-name: "@types/node"
+        versions: [">=23"]
+
   # ---------------------------------------------------------------------------
   # As actions usadas pelo ci.yml (actions/checkout, actions/setup-node).
   # ---------------------------------------------------------------------------

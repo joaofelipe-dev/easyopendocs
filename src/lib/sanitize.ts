@@ -41,11 +41,39 @@ export function sanitizeDocumentHtml(html: string): string {
   });
 }
 
-/** Versão em texto puro, para prévias e resumos em listagem. */
-export function htmlToPlainText(html: string, maxLength = 240): string {
-  const text = DOMPurify.sanitize(html, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
-    .replace(/\s+/g, " ")
-    .trim();
+// A saída do DOMPurify continua sendo HTML: com as tags fora, sobram as
+// entidades reescapadas. Decodificá-las aqui é seguro porque neste ponto a
+// string já é texto puro — e sem isso o índice de busca ficaria cheio de "amp".
+const ENTITIES: ReadonlyArray<[RegExp, string]> = [
+  [/&lt;/g, "<"],
+  [/&gt;/g, ">"],
+  [/&quot;/g, '"'],
+  [/&#39;/g, "'"],
+  [/&nbsp;/g, " "],
+  // Por último: decodificar &amp; antes das outras recriaria entidades.
+  [/&amp;/g, "&"],
+];
 
-  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+/**
+ * Versão em texto puro, para prévias, resumos em listagem e para o índice de
+ * busca. `maxLength: null` desliga o corte — é o que a indexação usa, já que
+ * truncar o corpo tornaria o documento inencontrável pelo próprio conteúdo.
+ */
+export function htmlToPlainText(
+  html: string,
+  maxLength: number | null = 240,
+): string {
+  // Sem separar as tags, `<p>alfa</p><p>beta</p>` vira "alfabeta": uma palavra
+  // que não existe no documento e que o índice passaria a conter. O padrão só
+  // casa o que parece tag de verdade, para não picotar um `a < b` solto.
+  const spaced = html.replace(/<[a-z!/][^>]*>/gi, " $& ");
+
+  let text = DOMPurify.sanitize(spaced, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  for (const [pattern, replacement] of ENTITIES) {
+    text = text.replace(pattern, replacement);
+  }
+  text = text.replace(/\s+/g, " ").trim();
+
+  if (maxLength === null || text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}…`;
 }
