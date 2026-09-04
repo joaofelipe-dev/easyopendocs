@@ -28,6 +28,7 @@ model User {
 
   departmentRoles UserDepartmentRole[]
   createdDocuments Document[]         @relation("DocumentAuthor")
+  documentVersions DocumentVersion[]  @relation("DocumentVersionAuthor")
 
   @@index([email])
 }
@@ -99,6 +100,10 @@ model Department {
   path        String
   /// Pasta sumiu do filesystem: some da UI mas preserva permissões e histórico.
   isOrphan    Boolean  @default(false)
+  /// Padrão de dias entre revisões para os documentos deste departamento, do
+  /// `reviewEveryDays` do `_departamento.json`. O front-matter do documento
+  /// sobrepõe; sem nenhum dos dois, o departamento fica fora do ciclo.
+  reviewIntervalDays Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -122,15 +127,74 @@ model Document {
   fileMtime    DateTime
   fileSize     Int      @default(0)
   isOrphan     Boolean  @default(false)
+  /// Texto puro do corpo já sanitizado, extraído no sync. Existe para
+  /// alimentar a busca e para o `ts_headline` ter de onde tirar o trecho.
+  plainText    String   @default("")
+  /// tsvector com pesos (título A, descrição B, corpo C). Coluna comum, não
+  /// gerada: `GENERATED ALWAYS AS` exigiria expressão IMMUTABLE e não é
+  /// representável aqui, então viraria drift a cada `migrate dev`. Quem
+  /// preenche é o sync, por SQL cru — ver src/lib/search.ts.
+  searchVector Unsupported("tsvector")?
+  /// Versão do indexador que gerou o vetor acima. Quando não bate com
+  /// SEARCH_INDEX_VERSION, o sync reprocessa o arquivo mesmo que o mtime e o
+  /// hash não tenham mudado — é o que faz o backfill acontecer sozinho.
+  searchVersion Int     @default(0)
+  /// Dias entre revisões, do front-matter `reviewEvery`. O arquivo continua
+  /// sendo a fonte: estes dois campos são índice, preenchidos pelo sync.
+  reviewIntervalDays Int?
+  /// Data da última revisão, do front-matter `reviewedAt`.
+  lastReviewedAt DateTime?
   createdById  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   createdBy  User?      @relation("DocumentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  versions   DocumentVersion[]
 
   @@unique([departmentId, slug])
   @@index([departmentId, isOrphan])
+  @@index([searchVector], type: Gin)
+}
+
+/// De onde veio a versão. `FILESYSTEM` é o padrão quando o sync acha conteúdo
+/// novo sem que nenhuma tela do portal tenha pedido — git, FTP, `cp` no
+/// servidor. Distinguir isso é metade do motivo de o histórico existir.
+enum DocumentVersionSource {
+  UI_CREATE
+  UI_EDIT
+  FILESYSTEM
+  RESTORE
+}
+
+/// Snapshot do arquivo a cada mudança de conteúdo detectada pelo sync.
+///
+/// Guarda o arquivo INTEIRO, front-matter incluído: é o que permite restaurar
+/// byte a byte, sem remontar o cabeçalho e torcer para dar igual. Fica no
+/// Postgres, não no disco, porque é histórico derivado — o filesystem continua
+/// sendo a fonte de verdade do conteúdo ATUAL, e só dele.
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  /// Sequencial por documento, começando em 1. Nunca reaproveitado: a poda por
+  /// retenção apaga versões antigas, mas não renumera as que ficam.
+  version     Int
+  title       String
+  description String?
+  /// O conteúdo bruto do arquivo, exatamente como estava no disco.
+  rawHtml     String
+  contentHash String
+  byteSize    Int      @default(0)
+  source      DocumentVersionSource @default(FILESYSTEM)
+  authorId    String?
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author   User?    @relation("DocumentVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([documentId, version])
+  @@index([documentId, createdAt])
+  @@index([authorId])
 }
 
 // ---------------------------------------------------------------------------

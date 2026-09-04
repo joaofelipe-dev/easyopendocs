@@ -197,3 +197,95 @@ describe("syncContent", () => {
     });
   });
 });
+
+describe("syncContent — ciclo de revisão", () => {
+  beforeEach(async () => {
+    await fs.rm(contentRoot(), { recursive: true, force: true });
+    await fs.mkdir(contentRoot(), { recursive: true });
+  });
+
+  async function writeRaw(
+    departmentSlug: string,
+    documentSlug: string,
+    contents: string,
+  ): Promise<void> {
+    await fs.mkdir(departmentDir(departmentSlug), { recursive: true });
+    await fs.writeFile(
+      path.join(departmentDir(departmentSlug), `${documentSlug}.html`),
+      contents,
+      "utf8",
+    );
+  }
+
+  it("indexa reviewEvery e reviewedAt do front-matter", async () => {
+    await writeRaw(
+      "ti",
+      "backup",
+      [
+        "<!-- title: Rotina de backup -->",
+        "<!-- reviewEvery: 180 -->",
+        "<!-- reviewedAt: 2026-01-15 -->",
+        "<article><p>x</p></article>",
+        "",
+      ].join("\n"),
+    );
+
+    await syncContent({ trigger: "MANUAL", force: true });
+
+    const document = await getDocument("ti", "backup");
+    expect(document.reviewIntervalDays).toBe(180);
+    expect(document.lastReviewedAt?.toISOString()).toBe("2026-01-15T00:00:00.000Z");
+  });
+
+  it("indexa reviewEveryDays do _departamento.json", async () => {
+    await fs.mkdir(departmentDir("ti"), { recursive: true });
+    await fs.writeFile(
+      path.join(departmentDir("ti"), "_departamento.json"),
+      JSON.stringify({ name: "TI", reviewEveryDays: 90 }),
+      "utf8",
+    );
+    await writeDocument("ti", "backup", { title: "Rotina de backup" });
+
+    await syncContent({ trigger: "MANUAL", force: true });
+
+    const department = await prisma.department.findUniqueOrThrow({ where: { slug: "ti" } });
+    expect(department.reviewIntervalDays).toBe(90);
+
+    // O documento não declara nada: quem herda é a tela, pelo reviewStatus.
+    const document = await getDocument("ti", "backup");
+    expect(document.reviewIntervalDays).toBeNull();
+  });
+
+  it("ignora valor de reviewEvery estragado em vez de indexar lixo", async () => {
+    // O arquivo é editável à mão: um valor inválido não pode virar um selo.
+    await writeRaw(
+      "ti",
+      "backup",
+      "<!-- title: T -->\n<!-- reviewEvery: sempre que der -->\n<article><p>x</p></article>\n",
+    );
+
+    await syncContent({ trigger: "MANUAL", force: true });
+
+    expect((await getDocument("ti", "backup")).reviewIntervalDays).toBeNull();
+  });
+
+  it("apagar reviewedAt do arquivo limpa o campo no índice", async () => {
+    await writeRaw(
+      "ti",
+      "backup",
+      "<!-- title: T -->\n<!-- reviewEvery: 30 -->\n<!-- reviewedAt: 2026-01-15 -->\n<article><p>x</p></article>\n",
+    );
+    await syncContent({ trigger: "MANUAL", force: true });
+    expect((await getDocument("ti", "backup")).lastReviewedAt).not.toBeNull();
+
+    await writeRaw(
+      "ti",
+      "backup",
+      "<!-- title: T -->\n<!-- reviewEvery: 30 -->\n<article><p>x</p></article>\n",
+    );
+    await syncContent({ trigger: "MANUAL", force: true });
+
+    // O arquivo é a fonte: tirar a linha de lá tem que tirar daqui também.
+    expect((await getDocument("ti", "backup")).lastReviewedAt).toBeNull();
+  });
+});

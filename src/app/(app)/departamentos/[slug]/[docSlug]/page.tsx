@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertCircle, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { AlertCircle, ChevronRight, History, Pencil, Trash2 } from "lucide-react";
 
 import { deleteDocumentAction } from "@/actions/documents";
 import { ActionForm, ConfirmSubmit } from "@/components/action-form";
+import { MarkReviewedButton } from "@/components/mark-reviewed-button";
+import { ReviewBadge } from "@/components/review-badge";
 import { BackLink } from "@/components/back-link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,7 @@ import { renderDocument, type DocumentHeading } from "@/lib/document-render";
 import { readDocumentSource } from "@/lib/content-sync";
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, can, requireDepartmentAccess } from "@/lib/rbac";
+import { reviewStatus } from "@/lib/review-cycle";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +63,15 @@ export default async function DocumentPage({
   const rendered = source === null ? null : renderDocument(source);
   const canEdit = can(access, PERMISSIONS.documentEdit);
   const canDelete = can(access, PERMISSIONS.documentDelete);
+
+  const review = reviewStatus({
+    documentIntervalDays: document.reviewIntervalDays,
+    departmentIntervalDays: access.department.reviewIntervalDays,
+    lastReviewedAt: document.lastReviewedAt,
+    // Sem `reviewedAt` no arquivo, a última alteração do conteúdo conta como
+    // revisão: na prática, editar é revisar.
+    fallbackDate: document.fileMtime,
+  });
   const deleteFormId = `delete-document-${document.id}`;
 
   return (
@@ -90,6 +102,7 @@ export default async function DocumentPage({
               Atualizado em {DATE_FORMAT.format(document.fileMtime)}
               {document.createdBy ? ` · criado por ${document.createdBy.name}` : ""}
             </p>
+            <ReviewBadge status={review} className="mt-2" />
             {access.isSuperAdmin ? (
               <code className="text-muted-foreground text-xs">
                 {document.filePath}
@@ -98,6 +111,20 @@ export default async function DocumentPage({
           </div>
           <div className="flex items-center gap-2 print:hidden">
             <PrintButton />
+            <Button asChild variant="ghost" size="sm">
+              <Link
+                href={`/departamentos/${access.department.slug}/${document.slug}/historico`}
+              >
+                <History />
+                Histórico
+              </Link>
+            </Button>
+            {canEdit && review.kind !== "off" ? (
+              <MarkReviewedButton
+                departmentSlug={access.department.slug}
+                documentSlug={document.slug}
+              />
+            ) : null}
             {canEdit ? (
               <Button asChild variant="outline" size="sm">
                 <Link

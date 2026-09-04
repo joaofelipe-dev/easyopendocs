@@ -9,16 +9,21 @@ import { z } from "zod";
 import {
   departmentDir,
   documentFile,
+  frontMatterLines,
+  hashContent,
   isValidSlug,
   renderDocumentFile,
   slugify,
   toRelativePath,
+  withFrontMatter,
 } from "@/lib/content";
-import { syncContent } from "@/lib/content-sync";
+import { readDocumentSource, syncContent } from "@/lib/content-sync";
+import { claimDocumentVersion, getDocumentVersion } from "@/lib/document-version";
+import { formatReviewedAt } from "@/lib/review-cycle";
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, getCurrentUser, requireDepartmentAccess } from "@/lib/rbac";
 import { sanitizeDocumentHtml } from "@/lib/sanitize";
-import { actionError, type ActionState } from "@/lib/action-state";
+import { actionError, actionSuccess, type ActionState } from "@/lib/action-state";
 
 // Arquivo "use server": só pode exportar funções async (tipos são apagados na
 // compilação, então `export type` é permitido).
@@ -29,8 +34,7 @@ export type DocumentFormState = {
 
 /**
  * Segmentos estáticos das rotas de departamento. Um documento com um desses
- * slugs existiria no disco mas nunca seria alcançável pela URL. "diagrama"
- * ainda não é rota — fica reservado para a tela de setas que virá depois.
+ * slugs existiria no disco mas nunca seria alcançável pela URL.
  */
 const RESERVED_SLUGS = new Set([
   "nova-documentacao",
@@ -157,6 +161,21 @@ export async function createDocumentAction(
     data: { createdById: user.id },
   });
 
+  // O sync acabou de gravar a v1 como "alterada no filesystem", que é tudo o
+  // que ele sabe. Aqui a versão ganha autor e origem.
+  const created = await prisma.document.findUnique({
+    where: { filePath: toRelativePath(filePath) },
+    select: { id: true },
+  });
+  if (created) {
+    await claimDocumentVersion({
+      documentId: created.id,
+      contentHash: hashContent(fileContents),
+      source: "UI_CREATE",
+      authorId: user.id,
+    });
+  }
+
   revalidatePath("/", "layout");
   redirect(`/departamentos/${access.department.slug}/${documentSlug}`);
 }
@@ -201,6 +220,13 @@ export async function updateDocumentAction(
 
   const { title, description, bodyHtml } = parsed.data;
 
+  // O cabeçalho é remontado a partir do formulário, então o front-matter que a
+  // tela não conhece precisa ser relido do arquivo e devolvido — senão editar
+  // um documento apagaria o `reviewEvery` dele, e o ciclo de revisão se
+  // desligaria sozinho no primeiro salvamento.
+  const currentSource = await readDocumentSource(existing.filePath);
+  const preserve = currentSource ? frontMatterLines(currentSource) : [];
+
   // O nome do arquivo (e portanto a URL) não muda ao editar: renomear quebraria
   // todo link já compartilhado. Só o front-matter `title` é atualizado.
   const fileContents = renderDocumentFile({
@@ -209,6 +235,7 @@ export async function updateDocumentAction(
     bodyHtml: sanitizeDocumentHtml(bodyHtml),
     author: user.name,
     createdAt: existing.createdAt,
+    preserve,
   });
 
   try {
@@ -219,6 +246,13 @@ export async function updateDocumentAction(
   }
 
   await syncContent({ trigger: "DOCUMENT_CREATE", force: true });
+
+  await claimDocumentVersion({
+    documentId: existing.id,
+    contentHash: hashContent(fileContents),
+    source: "UI_EDIT",
+    authorId: user.id,
+  });
 
   revalidatePath("/", "layout");
   redirect(`/departamentos/${access.department.slug}/${documentSlug}`);
@@ -269,6 +303,140 @@ export async function deleteDocumentAction(
 
   revalidatePath("/", "layout");
   redirect(`/departamentos/${access.department.slug}`);
+}
+
+// ---------------------------------------------------------------------------
+// Restauração de versão
+// ---------------------------------------------------------------------------
+
+/**
+ * Restaurar não desfaz: reescreve o arquivo com o conteúdo da versão antiga e
+ * deixa o sync gravar isso como uma versão NOVA. O histórico só cresce — o que
+ * estava publicado antes da restauração continua recuperável, e é justamente
+ * quem restaurou por engano que mais vai precisar disso.
+ */
+export async function restoreDocumentVersionAction(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const departmentSlug = String(formData.get("departmentSlug") ?? "");
+  const documentSlug = String(formData.get("documentSlug") ?? "");
+  const version = Number(formData.get("version"));
+
+  if (!isValidSlug(departmentSlug) || !isValidSlug(documentSlug)) {
+    return actionError("Documento inválido.");
+  }
+  if (!Number.isInteger(version) || version < 1) {
+    return actionError("Versão inválida.");
+  }
+
+  const { user, access } = await requireDepartmentAccess(
+    departmentSlug,
+    PERMISSIONS.documentEdit,
+  );
+
+  const existing = await prisma.document.findUnique({
+    where: {
+      departmentId_slug: { departmentId: access.department.id, slug: documentSlug },
+    },
+  });
+
+  if (!existing || existing.isOrphan) {
+    return actionError("Esta documentação não existe mais.");
+  }
+
+  const snapshot = await getDocumentVersion(existing.id, version);
+  if (!snapshot) return actionError("Esta versão não existe mais no histórico.");
+
+  if (snapshot.contentHash === existing.contentHash) {
+    return actionError("Esta já é a versão publicada — não há o que restaurar.");
+  }
+
+  try {
+    // Grava o arquivo byte a byte como estava, front-matter incluído: é para
+    // isso que o snapshot guarda o arquivo inteiro, e não só o corpo.
+    await fs.writeFile(
+      documentFile(departmentSlug, documentSlug),
+      snapshot.rawHtml,
+      "utf8",
+    );
+  } catch (error) {
+    console.error("[restoreDocumentVersionAction] falha ao gravar arquivo:", error);
+    return actionError(
+      "Não foi possível gravar o arquivo. Verifique as permissões da pasta.",
+    );
+  }
+
+  await syncContent({ trigger: "DOCUMENT_CREATE", force: true });
+
+  await claimDocumentVersion({
+    documentId: existing.id,
+    contentHash: snapshot.contentHash,
+    source: "RESTORE",
+    authorId: user.id,
+  });
+
+  revalidatePath("/", "layout");
+  redirect(`/departamentos/${access.department.slug}/${documentSlug}`);
+}
+
+// ---------------------------------------------------------------------------
+// Ciclo de revisão
+// ---------------------------------------------------------------------------
+
+/**
+ * Carimba a data de hoje em `reviewedAt`, no próprio arquivo.
+ *
+ * Grava a chave no lugar, preservando o resto do arquivo byte a byte, em vez
+ * de remontar o documento: revisar não é editar, e uma revisão não deve
+ * reformatar o HTML de quem escreveu à mão.
+ */
+export async function markDocumentReviewedAction(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const departmentSlug = String(formData.get("departmentSlug") ?? "");
+  const documentSlug = String(formData.get("documentSlug") ?? "");
+
+  if (!isValidSlug(departmentSlug) || !isValidSlug(documentSlug)) {
+    return actionError("Documento inválido.");
+  }
+
+  const { access } = await requireDepartmentAccess(
+    departmentSlug,
+    PERMISSIONS.documentEdit,
+  );
+
+  const existing = await prisma.document.findUnique({
+    where: {
+      departmentId_slug: { departmentId: access.department.id, slug: documentSlug },
+    },
+  });
+
+  if (!existing || existing.isOrphan) {
+    return actionError("Esta documentação não existe mais.");
+  }
+
+  const source = await readDocumentSource(existing.filePath);
+  if (source === null) {
+    return actionError("O arquivo desta documentação não pôde ser lido.");
+  }
+
+  const updated = withFrontMatter(source, "reviewedAt", formatReviewedAt(new Date()));
+
+  try {
+    await fs.writeFile(documentFile(departmentSlug, documentSlug), updated, "utf8");
+  } catch (error) {
+    console.error("[markDocumentReviewedAction] falha ao gravar arquivo:", error);
+    return actionError(
+      "Não foi possível gravar o arquivo. Verifique as permissões da pasta.",
+    );
+  }
+
+  await syncContent({ trigger: "DOCUMENT_CREATE", force: true });
+
+  revalidatePath("/", "layout");
+  return actionSuccess("Documentação marcada como revisada.");
 }
 
 // ---------------------------------------------------------------------------

@@ -199,6 +199,104 @@ navegador com uma folha de estilo dedicada: cabeçalho, barra lateral,
 breadcrumb e botões de ação somem, sobrando só o conteúdo. Vídeos embutidos
 não têm como imprimir e são ocultados nessa visão.
 
+## Busca
+
+Há um campo de busca no cabeçalho (atalho `/`) e em cada departamento. A busca
+cobre **título, descrição e conteúdo** das documentações — só as que o usuário
+tem permissão de ler.
+
+```
+/busca?q=rotina+de+backup
+/busca?q=backup&departamento=engenharia
+```
+
+- **Acento é opcional.** "manutencao" encontra "manutenção": a configuração de
+  busca `pt_unaccent` (criada pela migration `add_document_search`) é a
+  `portuguese` do Postgres com o dicionário `unaccent` na frente do
+  radicalizador. A extensão `unaccent` é *trusted* desde o PG13, então a
+  migration a cria sem precisar de superuser.
+- **Aceita a sintaxe do `websearch_to_tsquery`:** `"frase exata"`, `-palavra`
+  para excluir, `or` entre termos.
+- **Ranking por peso:** acerto no título vale mais que na descrição, que vale
+  mais que no corpo. Um documento chamado "Rotina de backup" fica acima de um
+  que só cita backup de passagem.
+- **O recorte de acesso vai no SQL**, não depois: o usuário nunca gasta o
+  limite de resultados com documentos que não pode abrir, e um departamento em
+  que ele não tem `document:read` não aparece nem no filtro.
+
+### Como o índice é mantido
+
+O índice é uma coluna `tsvector` em `Document`, preenchida **pelo sync** — o
+mesmo que já lê o arquivo do disco. Só documento que mudou é reprocessado; o
+texto indexado é o que sobra depois do sanitizador, então conteúdo que não é
+exibido também não é encontrável.
+
+Não há passo manual de indexação, nem depois de atualizar um portal que já
+estava rodando: cada documento carrega a versão do indexador que o gerou
+(`searchVersion`), e o sync reprocessa sozinho o que ficou para trás. Trocar
+como o vetor é montado é uma questão de incrementar `SEARCH_INDEX_VERSION` em
+[`src/lib/search-index.ts`](src/lib/search-index.ts) — a reindexação acontece no
+próximo sync, sem `?force=1`.
+
+## Histórico de versões
+
+Toda mudança de conteúdo de uma documentação vira uma **versão** — inclusive as
+feitas fora do portal, direto no arquivo. Quem grava é o sync, no mesmo ponto em
+que ele já lê o arquivo do disco, então um `git pull`, um upload por FTP ou um
+`cp` no servidor entram no histórico igual a uma edição pela tela.
+
+Em `/departamentos/{departamento}/{documento}/historico`:
+
+- a lista de versões, com data, autor, tamanho e a variação em relação à
+  anterior;
+- a origem de cada uma: **criada pelo portal**, **editada pelo portal**,
+  **alterada no filesystem** ou **restaurada**;
+- `?v=N` mostra aquela versão renderizada, passando pelo mesmo sanitizador da
+  publicação — um snapshot antigo não escapa de uma regra de sanitização que
+  mudou depois;
+- `?de=N&para=M` compara duas versões;
+- **Restaurar** (exige `document:edit`) reescreve o arquivo no disco com o
+  conteúdo daquela versão.
+
+Ver o histórico exige `document:read`, a mesma permissão do documento.
+
+### Restaurar avança, não volta
+
+A restauração grava uma versão NOVA com o conteúdo antigo. O que estava
+publicado no momento da restauração continua no histórico e pode ser
+restaurado de volta — que é exatamente do que precisa quem restaurou por
+engano. O histórico só cresce.
+
+O snapshot guarda o **arquivo inteiro**, front-matter incluído, e é por isso
+que a restauração é byte a byte: o portal não remonta o cabeçalho torcendo
+para dar igual.
+
+### Comparação por bloco, não por linha
+
+O editor do portal grava o corpo inteiro numa linha só; um arquivo escrito à
+mão vem indentado em dezenas de linhas. Um diff por linha diria "tudo removido,
+tudo adicionado" em toda edição feita pela tela — o caso mais comum. Por isso
+[`src/lib/text-diff.ts`](src/lib/text-diff.ts) quebra nas bordas das tags de
+bloco antes de comparar, e trata quebra de linha como espaço em branco.
+
+O preço assumido: uma mudança que existe só na indentação de dentro de um
+`<pre>` não aparece na comparação. A restauração continua byte a byte de
+qualquer forma.
+
+### Retenção
+
+Ficam guardadas as **50 últimas** versões de cada documento
+(`DOCUMENT_HISTORY_LIMIT`). O snapshot é o texto completo, então sem teto o
+banco cresceria proporcional ao número de salvamentos, não ao de documentos.
+A numeração das versões nunca é reaproveitada: podar as antigas não renumera as
+que ficam.
+
+Documentações já indexadas antes desta versão do portal não ganham histórico
+retroativo — não há de onde tirá-lo. A primeira versão delas nasce na próxima
+vez que o conteúdo mudar.
+
+---
+
 ## Como criar um departamento
 
 **Pelo filesystem:** crie a pasta `content/departamentos/{slug}/`. O nome exibido
@@ -273,20 +371,90 @@ tela). Se o JSON estiver inválido, a tela avisa e **o editor fica bloqueado**:
 abri-lo mostraria uma lista vazia, e salvar por cima apagaria o que está no
 arquivo.
 
-### O diagrama, depois
+### O diagrama
 
-A tela de hoje é uma lista de blocos agrupados por frente. O passo seguinte
-previsto é o **diagrama**: as mesmas responsabilidades desenhadas com setas
-entre si, mostrando quem entrega para quem.
+As mesmas responsabilidades desenhadas com setas entre si, em
+`/departamentos/{departamento}/diagrama`: **uma coluna por frente, um bloco por
+responsabilidade, uma seta por `deliversTo`**. É a mesma permissão da lista
+(`document:read`) e os mesmos dados — nenhum arquivo novo, nenhuma tabela nova.
 
-O campo `deliversTo` (ids de outras responsabilidades) já é validado, gravado e
-preservado em todas as edições — só não é usado em lugar nenhum ainda.
-Referências que apontam para um bloco excluído são descartadas ao salvar. Quem
-quiser adiantar pode preenchê-lo à mão desde já: quando o diagrama existir,
-nenhum mapa vai precisar ser remontado.
+O campo `deliversTo` (ids de outras responsabilidades) sempre foi validado,
+gravado e preservado nas edições; agora ele é o que desenha as setas. Mapa que
+já estava preenchido não precisa ser remontado.
 
-O slug `diagrama` já está reservado em `src/actions/documents.ts` para essa
-rota futura, então nenhuma documentação pode ocupá-lo no meio do caminho.
+- Bloco **tracejado** é responsabilidade sem documentação; o rodapé em vermelho
+  conta os vínculos quebrados — os mesmos critérios da tela de lista.
+- Bloco com documentação é link para ela.
+- Passar o mouse num bloco destaca só ele e os vizinhos, nos dois sentidos.
+- Tem botão de impressão, com folha de estilo própria.
+
+**Como as setas são roteadas:** entre colunas vizinhas, uma curva simples. Já
+uma seta que pula mais de uma coluna desce pelo **vão entre colunas** até um
+corredor livre abaixo do diagrama, corre na horizontal e sobe pelo vão ao lado
+do destino. Sem isso ela passaria por trás dos blocos do meio (os retângulos
+são opacos) e não daria para saber onde termina.
+
+O layout vive em
+[`src/lib/responsibilities-graph.ts`](src/lib/responsibilities-graph.ts), como
+função pura e sem dependência de biblioteca de grafo: é a parte que erra em
+silêncio — bloco sobreposto, texto fora da caixa, seta para o nada não quebram
+nada, só desenham errado — e por isso precisa ser testável sem navegador.
+
+As colunas seguem a **ordem do arquivo**, a mesma da tela de lista: reordenar
+por número de conexões encurtaria as setas, mas conferir uma tela contra a
+outra é o uso mais provável do diagrama.
+
+O slug `diagrama` continua reservado em `src/actions/documents.ts` — agora
+porque é rota de verdade.
+
+---
+
+## Ciclo de revisão
+
+Documentação interna apodrece em silêncio: nada dizia "isto não é revisado há
+catorze meses", que é como um portal perde a confiança de quem o lê.
+
+A fonte é o arquivo, como todo o resto:
+
+```html
+<!-- reviewEvery: 180 -->        <!-- dias entre revisões -->
+<!-- reviewedAt: 2026-09-04 -->  <!-- data da última revisão -->
+```
+
+E o padrão do departamento vai no `_departamento.json`:
+
+```json
+{ "name": "Engenharia", "reviewEveryDays": 180 }
+```
+
+O `reviewEvery` do documento sobrepõe o padrão do departamento. **Sem nenhum
+dos dois, a documentação não participa do ciclo** — nada de selo em quem nunca
+pediu para ser acompanhado, o que é o estado de qualquer portal antes de alguém
+decidir usar isto.
+
+Com o ciclo ligado, aparece um selo — **em dia**, **vence em N dias** ou
+**vencida há N dias** — na tela do documento e na listagem do departamento, um
+filtro "revisão vencida" na listagem, e a contagem por departamento no
+`/admin`.
+
+- **Sem `reviewedAt`, a data de alteração do arquivo conta como última
+  revisão.** Sem esse padrão, ligar o ciclo num departamento marcaria toda a
+  documentação existente como vencida no mesmo dia.
+- **O aviso de "vence em breve" é proporcional:** um quarto do ciclo, no máximo
+  14 dias. Um ciclo de 30 dias não passa metade da vida "quase vencendo", e um
+  ciclo anual não avisa com três meses de antecedência.
+- **Valor estragado é ignorado.** O arquivo é editável à mão; um
+  `reviewEvery: sempre que der` não vira selo nenhum, em vez de virar um selo
+  errado.
+
+**Marcar como revisada** (permissão `document:edit`) carimba a data de hoje em
+`reviewedAt` **alterando só essa linha do arquivo** — revisar não é editar, e
+uma revisão não deve reformatar o HTML de quem escreveu à mão.
+
+> Editar pela UI **preserva** `reviewEvery`, `reviewedAt` e qualquer outra
+> chave de front-matter que a tela não conhece. A tela remonta o cabeçalho a
+> partir do formulário, então sem isso uma única edição desligaria o ciclo do
+> documento.
 
 ---
 
@@ -387,7 +555,9 @@ Há dois ativos com estado que precisam de backup — nenhum dos dois é
 reconstruível a partir do outro:
 
 1. **Banco Postgres** — usuários, senhas, papéis/permissões (RBAC), atribuições
-   usuário↔departamento e metadados de documento (autor, hash, histórico).
+   usuário↔departamento, metadados de documento (autor, hash) e o **histórico
+   de versões**, que é o único lugar onde o conteúdo anterior de uma
+   documentação existe.
 2. **`content/departamentos/`** — o HTML de cada documentação e o
    `_responsabilidades.json` de cada departamento, a fonte de verdade do
    conteúdo.
@@ -471,6 +641,7 @@ deploy por botão sem expor o servidor.
 | `NEXTAUTH_URL`       | sim         | URL base da aplicação                                        |
 | `CONTENT_ROOT`       | não         | Raiz das documentações (padrão `content/departamentos`)       |
 | `SYNC_THROTTLE_MS`   | não         | Janela entre syncs automáticos (padrão `3000`)               |
+| `DOCUMENT_HISTORY_LIMIT` | não     | Versões guardadas por documento (padrão `50`)                |
 | `ADMIN_NAME`         | não         | Nome do super admin do seed                                  |
 | `ADMIN_EMAIL`        | não         | E-mail do super admin do seed                                |
 | `ADMIN_PASSWORD`     | não         | Senha do super admin do seed (padrão `admin123`)             |
@@ -496,10 +667,12 @@ easyopendocs/
     ├── app/
     │   ├── (auth)/login/
     │   ├── (app)/page.tsx                                  # home
+    │   ├── (app)/busca/                                     # busca full-text
     │   ├── (app)/sem-acesso/
     │   ├── (app)/departamentos/[slug]/                     # layout + sidebar
     │   ├── (app)/departamentos/[slug]/responsabilidades/   # mapa + edição
-    │   ├── (app)/departamentos/[slug]/[docSlug]/           # doc + edição
+    │   ├── (app)/departamentos/[slug]/diagrama/            # o mapa como setas
+    │   ├── (app)/departamentos/[slug]/[docSlug]/           # doc + edição + histórico
     │   ├── (app)/departamentos/[slug]/nova-documentacao/
     │   ├── (app)/admin/                                    # usuários, deps, papéis, sync
     │   └── api/{auth,sync,media}/                          # media = upload + serving de imagem/vídeo
@@ -512,7 +685,13 @@ easyopendocs/
     │   ├── permissions.ts        # catálogo compartilhado com o seed
     │   ├── content.ts            # slugs, caminhos, front-matter, template
     │   ├── content-sync.ts       # indexador filesystem -> Postgres
+    │   ├── search.ts             # consulta da busca (respeita o RBAC)
+    │   ├── search-index.ts       # escrita do índice — quem chama é o sync
+    │   ├── document-version.ts   # histórico: snapshot, retenção, autoria
+    │   ├── text-diff.ts          # comparação por bloco entre duas versões
+    │   ├── review-cycle.ts       # ciclo de revisão (função pura)
     │   ├── department-responsibilities.ts       # schema e regras do mapa
+    │   ├── responsibilities-graph.ts            # layout do diagrama (função pura)
     │   ├── department-responsibilities-file.ts  # leitura/escrita do JSON
     │   ├── document-render.ts    # sanitização + âncoras + índice
     │   ├── rbac-seed.ts          # fixtures de RBAC — seed.ts E os testes usam
@@ -525,7 +704,7 @@ tests/
 ├── setup.ts                   # tmpdir de CONTENT_ROOT + truncate por teste
 ├── helpers/db.ts               # resetDatabase() + fixtures de rbac-seed.ts
 ├── stubs/server-only.ts       # alias p/ importar módulos "server-only" fora do Next
-├── lib/                       # sanitize, rbac, content-sync, department-responsibilities
+├── lib/                       # sanitize, rbac, content-sync, search, department-responsibilities
 └── actions/                   # server actions fim a fim
 ```
 
@@ -544,6 +723,11 @@ tests/
   `EBADENGINE`, e a quebra aparece bem depois, no `next build`, como
   `TypeError: webidl.util.markAsUncloneable is not a function` ao coletar dados
   de página. O `engines` do `package.json` declara isso para o npm avisar cedo.
+- **O seed roda com `--conditions=react-server`** (`prisma.config.ts`). O
+  pacote `server-only` só é neutralizado por essa condição de resolução, que o
+  bundler do Next aplica sozinho nas compilações de servidor mas o `tsx` não —
+  e desde a busca o sync alcança o sanitizador, que é `server-only`. Os testes
+  resolvem o mesmo problema por um alias (`tests/stubs/server-only.ts`).
 - `forbidden()` do Next exige a flag experimental `authInterrupts`; para não
   depender dela num caminho de autorização, o app redireciona para `/sem-acesso`.
 
