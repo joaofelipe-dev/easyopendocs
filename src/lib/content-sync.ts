@@ -14,6 +14,19 @@ import {
   parseFrontMatter,
   toRelativePath,
 } from "@/lib/content";
+import {
+  SEARCH_INDEX_VERSION,
+  documentPlainText,
+  indexDocumentSearch,
+} from "@/lib/search-index";
+import { recordDocumentVersion } from "@/lib/document-version";
+import {
+  DEPARTMENT_REVIEW_KEY,
+  REVIEWED_AT_KEY,
+  REVIEW_EVERY_KEY,
+  parseReviewInterval,
+  parseReviewedAt,
+} from "@/lib/review-cycle";
 
 /**
  * Indexador do filesystem -> Postgres.
@@ -89,6 +102,8 @@ type ScannedDepartment = {
   slug: string;
   name: string;
   description: string | null;
+  /** `reviewEveryDays` do `_departamento.json`, o padrão do ciclo de revisão. */
+  reviewIntervalDays: number | null;
   relativePath: string;
   documents: ScannedDocument[];
 };
@@ -96,13 +111,17 @@ type ScannedDepartment = {
 async function readDepartmentMeta(
   dir: string,
   slug: string,
-): Promise<{ name: string; description: string | null }> {
+): Promise<{
+  name: string;
+  description: string | null;
+  reviewIntervalDays: number | null;
+}> {
   try {
     const raw = await fs.readFile(path.join(dir, DEPARTMENT_META_FILE), "utf8");
     const parsed: unknown = JSON.parse(raw);
 
     if (parsed && typeof parsed === "object") {
-      const meta = parsed as { name?: unknown; description?: unknown };
+      const meta = parsed as Record<string, unknown>;
       return {
         name:
           typeof meta.name === "string" && meta.name.trim()
@@ -112,13 +131,14 @@ async function readDepartmentMeta(
           typeof meta.description === "string" && meta.description.trim()
             ? meta.description.trim()
             : null,
+        reviewIntervalDays: parseReviewInterval(meta[DEPARTMENT_REVIEW_KEY]),
       };
     }
   } catch {
     // Sem metadados (ou JSON inválido): o nome humanizado do slug já serve.
   }
 
-  return { name: humanizeSlug(slug), description: null };
+  return { name: humanizeSlug(slug), description: null, reviewIntervalDays: null };
 }
 
 async function scanContentTree(): Promise<ScannedDepartment[]> {
@@ -152,6 +172,7 @@ async function scanContentTree(): Promise<ScannedDepartment[]> {
       slug: entry.name,
       name: meta.name,
       description: meta.description,
+      reviewIntervalDays: meta.reviewIntervalDays,
       relativePath: toRelativePath(dir),
       documents,
     });
@@ -284,6 +305,7 @@ async function upsertDepartment(scanned: ScannedDepartment, stats: SyncStats) {
         slug: scanned.slug,
         name: scanned.name,
         description: scanned.description,
+        reviewIntervalDays: scanned.reviewIntervalDays,
         path: scanned.relativePath,
         isOrphan: false,
       },
@@ -293,6 +315,7 @@ async function upsertDepartment(scanned: ScannedDepartment, stats: SyncStats) {
   const changed =
     existing.name !== scanned.name ||
     existing.description !== scanned.description ||
+    existing.reviewIntervalDays !== scanned.reviewIntervalDays ||
     existing.path !== scanned.relativePath ||
     existing.isOrphan;
 
@@ -304,6 +327,7 @@ async function upsertDepartment(scanned: ScannedDepartment, stats: SyncStats) {
     data: {
       name: scanned.name,
       description: scanned.description,
+      reviewIntervalDays: scanned.reviewIntervalDays,
       path: scanned.relativePath,
       isOrphan: false,
     },
@@ -327,12 +351,16 @@ async function syncDepartmentDocuments(
     const existing = existingBySlug.get(file.slug);
 
     // Checagem barata primeiro: mtime + tamanho iguais => arquivo intocado.
+    // `searchVersion` entra aqui para que uma mudança no indexador force a
+    // releitura mesmo do que não mudou no disco — é o backfill do índice de
+    // busca acontecendo sozinho, sem `?force=1`.
     const unchangedStat =
       existing &&
       !existing.isOrphan &&
       existing.fileMtime.getTime() === file.mtime.getTime() &&
       existing.fileSize === file.size &&
-      existing.filePath === file.relativePath;
+      existing.filePath === file.relativePath &&
+      existing.searchVersion === SEARCH_INDEX_VERSION;
 
     if (unchangedStat && !force) {
       stats.documentsSkipped += 1;
@@ -343,12 +371,18 @@ async function syncDepartmentDocuments(
     const contentHash = hashContent(raw);
 
     if (existing && existing.contentHash === contentHash && !existing.isOrphan && !force) {
-      // Conteúdo idêntico, só o mtime mudou (touch, checkout). Atualiza o
-      // carimbo para que o próximo sync volte a cair no atalho barato.
+      // Conteúdo idêntico, só o mtime mudou (touch, checkout) — ou o índice de
+      // busca ficou para trás. Atualiza o carimbo para que o próximo sync volte
+      // a cair no atalho barato.
       await prisma.document.update({
         where: { id: existing.id },
         data: { fileMtime: file.mtime, fileSize: file.size, filePath: file.relativePath },
       });
+
+      if (existing.searchVersion !== SEARCH_INDEX_VERSION) {
+        await reindexDocument(existing.id, existing.title, existing.description, raw);
+      }
+
       stats.documentsSkipped += 1;
       continue;
     }
@@ -356,6 +390,9 @@ async function syncDepartmentDocuments(
     const { frontMatter } = parseFrontMatter(raw);
     const title = extractTitle(raw, frontMatter, file.slug);
     const description = extractDescription(frontMatter);
+    const plainText = documentPlainText(raw);
+    const reviewIntervalDays = parseReviewInterval(frontMatter[REVIEW_EVERY_KEY]);
+    const lastReviewedAt = parseReviewedAt(frontMatter[REVIEWED_AT_KEY]);
 
     if (existing) {
       await prisma.document.update({
@@ -363,28 +400,71 @@ async function syncDepartmentDocuments(
         data: {
           title,
           description,
+          reviewIntervalDays,
+          lastReviewedAt,
           filePath: file.relativePath,
           contentHash,
           fileMtime: file.mtime,
           fileSize: file.size,
           isOrphan: false,
+          plainText,
         },
       });
+      await indexDocumentSearch({
+        documentId: existing.id,
+        title,
+        description,
+        plainText,
+      });
+
+      // Só versiona quando o conteúdo mudou de verdade. Um sync com `force`
+      // chega aqui para TODO arquivo do disco, inclusive os intocados — e o
+      // portal dispara justamente um `force` a cada gravação pela UI, então
+      // sem esta checagem uma única edição criaria uma versão nova em cada
+      // documento do portal.
+      if (existing.contentHash !== contentHash) {
+        await recordDocumentVersion({
+          documentId: existing.id,
+          title,
+          description,
+          rawHtml: raw,
+          contentHash,
+        });
+      }
+
       stats.documentsUpdated += 1;
     } else {
-      await prisma.document.create({
+      const created = await prisma.document.create({
         data: {
           departmentId,
           slug: file.slug,
           title,
           description,
+          reviewIntervalDays,
+          lastReviewedAt,
           filePath: file.relativePath,
           contentHash,
           fileMtime: file.mtime,
           fileSize: file.size,
           isOrphan: false,
+          plainText,
         },
       });
+      await indexDocumentSearch({
+        documentId: created.id,
+        title,
+        description,
+        plainText,
+      });
+
+      await recordDocumentVersion({
+        documentId: created.id,
+        title,
+        description,
+        rawHtml: raw,
+        contentHash,
+      });
+
       stats.documentsCreated += 1;
     }
   }
@@ -400,6 +480,25 @@ async function syncDepartmentDocuments(
     });
     stats.documentsOrphaned += disappeared.length;
   }
+}
+
+/**
+ * Recalcula só o índice de busca, sem tocar em nada do conteúdo — é o caminho
+ * do documento cujo arquivo não mudou mas cujo `searchVersion` ficou para trás.
+ */
+async function reindexDocument(
+  documentId: string,
+  title: string,
+  description: string | null,
+  raw: string,
+): Promise<void> {
+  const plainText = documentPlainText(raw);
+
+  await prisma.document.update({
+    where: { id: documentId },
+    data: { plainText },
+  });
+  await indexDocumentSearch({ documentId, title, description, plainText });
 }
 
 async function markMissingDepartmentsAsOrphans(

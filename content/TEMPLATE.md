@@ -77,10 +77,32 @@ comentário, e para ali.
 | `description` | opcional    | Resumo de uma linha exibido no card da listagem        |
 | `author`      | opcional    | Preenchido automaticamente por docs criadas pela UI    |
 | `createdAt`   | opcional    | ISO 8601, preenchido automaticamente por docs da UI    |
+| `reviewEvery` | opcional    | Dias entre revisões desta documentação                  |
+| `reviewedAt`  | opcional    | Data da última revisão (`AAAA-MM-DD`)                  |
 
 Sem `title`, o indexador tenta nesta ordem: tag `<title>` → primeiro `<h1>` →
 nome do arquivo humanizado. Ainda assim, **declare `title` explicitamente** —
 é o único jeito de o título não depender do corpo do documento.
+
+### Ciclo de revisão
+
+Documentação interna envelhece em silêncio. Declarando `reviewEvery`, o portal
+passa a mostrar um selo — **em dia**, **vence em N dias** ou **vencida há N
+dias** — na listagem e na tela do documento, e conta as vencidas no `/admin`.
+
+```html
+<!-- reviewEvery: 180 -->
+<!-- reviewedAt: 2026-09-04 -->
+```
+
+- Sem `reviewedAt`, a **data de alteração do arquivo** conta como a última
+  revisão: na prática, editar é revisar.
+- Um padrão para o departamento inteiro vai no `_departamento.json`
+  (`reviewEveryDays`); o `reviewEvery` do documento sobrepõe.
+- Sem nenhum dos dois, a documentação simplesmente **não participa** — nada de
+  selo em quem nunca pediu para ser acompanhado.
+- O botão **Marcar como revisada** (permissão `document:edit`) carimba a data
+  de hoje em `reviewedAt`, alterando só essa linha do arquivo.
 
 ### Corpo
 
@@ -133,9 +155,14 @@ crie um `_departamento.json` dentro da pasta:
 ```json
 {
   "name": "Recursos Humanos",
-  "description": "Políticas, benefícios e processos de pessoas"
+  "description": "Políticas, benefícios e processos de pessoas",
+  "reviewEveryDays": 180
 }
 ```
+
+`reviewEveryDays` é opcional: define o ciclo de revisão padrão das
+documentações deste departamento, que cada arquivo pode sobrepor com
+`reviewEvery` no front-matter.
 
 ## 5. Como publicar
 
