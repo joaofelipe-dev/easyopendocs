@@ -371,20 +371,41 @@ tela). Se o JSON estiver inválido, a tela avisa e **o editor fica bloqueado**:
 abri-lo mostraria uma lista vazia, e salvar por cima apagaria o que está no
 arquivo.
 
-### O diagrama, depois
+### O diagrama
 
-A tela de hoje é uma lista de blocos agrupados por frente. O passo seguinte
-previsto é o **diagrama**: as mesmas responsabilidades desenhadas com setas
-entre si, mostrando quem entrega para quem.
+As mesmas responsabilidades desenhadas com setas entre si, em
+`/departamentos/{departamento}/diagrama`: **uma coluna por frente, um bloco por
+responsabilidade, uma seta por `deliversTo`**. É a mesma permissão da lista
+(`document:read`) e os mesmos dados — nenhum arquivo novo, nenhuma tabela nova.
 
-O campo `deliversTo` (ids de outras responsabilidades) já é validado, gravado e
-preservado em todas as edições — só não é usado em lugar nenhum ainda.
-Referências que apontam para um bloco excluído são descartadas ao salvar. Quem
-quiser adiantar pode preenchê-lo à mão desde já: quando o diagrama existir,
-nenhum mapa vai precisar ser remontado.
+O campo `deliversTo` (ids de outras responsabilidades) sempre foi validado,
+gravado e preservado nas edições; agora ele é o que desenha as setas. Mapa que
+já estava preenchido não precisa ser remontado.
 
-O slug `diagrama` já está reservado em `src/actions/documents.ts` para essa
-rota futura, então nenhuma documentação pode ocupá-lo no meio do caminho.
+- Bloco **tracejado** é responsabilidade sem documentação; o rodapé em vermelho
+  conta os vínculos quebrados — os mesmos critérios da tela de lista.
+- Bloco com documentação é link para ela.
+- Passar o mouse num bloco destaca só ele e os vizinhos, nos dois sentidos.
+- Tem botão de impressão, com folha de estilo própria.
+
+**Como as setas são roteadas:** entre colunas vizinhas, uma curva simples. Já
+uma seta que pula mais de uma coluna desce pelo **vão entre colunas** até um
+corredor livre abaixo do diagrama, corre na horizontal e sobe pelo vão ao lado
+do destino. Sem isso ela passaria por trás dos blocos do meio (os retângulos
+são opacos) e não daria para saber onde termina.
+
+O layout vive em
+[`src/lib/responsibilities-graph.ts`](src/lib/responsibilities-graph.ts), como
+função pura e sem dependência de biblioteca de grafo: é a parte que erra em
+silêncio — bloco sobreposto, texto fora da caixa, seta para o nada não quebram
+nada, só desenham errado — e por isso precisa ser testável sem navegador.
+
+As colunas seguem a **ordem do arquivo**, a mesma da tela de lista: reordenar
+por número de conexões encurtaria as setas, mas conferir uma tela contra a
+outra é o uso mais provável do diagrama.
+
+O slug `diagrama` continua reservado em `src/actions/documents.ts` — agora
+porque é rota de verdade.
 
 ---
 
@@ -601,6 +622,7 @@ easyopendocs/
     │   ├── (app)/sem-acesso/
     │   ├── (app)/departamentos/[slug]/                     # layout + sidebar
     │   ├── (app)/departamentos/[slug]/responsabilidades/   # mapa + edição
+    │   ├── (app)/departamentos/[slug]/diagrama/            # o mapa como setas
     │   ├── (app)/departamentos/[slug]/[docSlug]/           # doc + edição + histórico
     │   ├── (app)/departamentos/[slug]/nova-documentacao/
     │   ├── (app)/admin/                                    # usuários, deps, papéis, sync
@@ -619,6 +641,7 @@ easyopendocs/
     │   ├── document-version.ts   # histórico: snapshot, retenção, autoria
     │   ├── text-diff.ts          # comparação por bloco entre duas versões
     │   ├── department-responsibilities.ts       # schema e regras do mapa
+    │   ├── responsibilities-graph.ts            # layout do diagrama (função pura)
     │   ├── department-responsibilities-file.ts  # leitura/escrita do JSON
     │   ├── document-render.ts    # sanitização + âncoras + índice
     │   ├── rbac-seed.ts          # fixtures de RBAC — seed.ts E os testes usam

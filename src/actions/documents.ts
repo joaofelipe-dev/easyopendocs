@@ -31,8 +31,7 @@ export type DocumentFormState = {
 
 /**
  * Segmentos estáticos das rotas de departamento. Um documento com um desses
- * slugs existiria no disco mas nunca seria alcançável pela URL. "diagrama"
- * ainda não é rota — fica reservado para a tela de setas que virá depois.
+ * slugs existiria no disco mas nunca seria alcançável pela URL.
  */
 const RESERVED_SLUGS = new Set([
   "nova-documentacao",
