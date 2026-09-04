@@ -31,6 +31,8 @@ de serviço — mesma lógica, sem precisar do Docker Compose local.
 | `tests/lib/content-sync.test.ts` | `syncContent` contra disco+banco reais: criação, skip por mtime/hash, órfão de documento e de departamento, retorno (un-orphan) |
 | `tests/lib/department-responsibilities.test.ts` | `parseResponsibilities`/`resolveResponsibilities` — lógica pura, ids, poda de `deliversTo` órfão, cálculo de "sem documentação" |
 | `tests/lib/search.test.ts` | `searchDocuments` contra o tsvector real: acerto no corpo, busca sem acento, recorte por `document:read`, órfão fora, ranking por peso e o backfill automático do índice |
+| `tests/lib/document-version.test.ts` | Histórico contra disco+banco reais: v1 na indexação, `force` não versiona documento intocado, edição por fora, retenção, atribuição de autoria |
+| `tests/lib/text-diff.test.ts` | `diffDocuments` — lógica pura: HTML indentado à mão casando com o de uma linha só que o editor gera, colapso de blocos iguais, teto de tamanho |
 | `tests/actions/documents.test.ts` | `createDocumentAction` fim a fim: RBAC real → sanitização real → arquivo real no disco → indexação real → redirect |
 
 Não é exaustivo — é a base de cada camada arriscada do app (RBAC, sanitização,

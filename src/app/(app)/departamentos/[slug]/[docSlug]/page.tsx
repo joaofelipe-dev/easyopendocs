@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertCircle, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { AlertCircle, ChevronRight, History, Pencil, Trash2 } from "lucide-react";
 
 import { deleteDocumentAction } from "@/actions/documents";
 import { ActionForm, ConfirmSubmit } from "@/components/action-form";
@@ -98,6 +98,14 @@ export default async function DocumentPage({
           </div>
           <div className="flex items-center gap-2 print:hidden">
             <PrintButton />
+            <Button asChild variant="ghost" size="sm">
+              <Link
+                href={`/departamentos/${access.department.slug}/${document.slug}/historico`}
+              >
+                <History />
+                Histórico
+              </Link>
+            </Button>
             {canEdit ? (
               <Button asChild variant="outline" size="sm">
                 <Link

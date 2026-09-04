@@ -9,12 +9,14 @@ import { z } from "zod";
 import {
   departmentDir,
   documentFile,
+  hashContent,
   isValidSlug,
   renderDocumentFile,
   slugify,
   toRelativePath,
 } from "@/lib/content";
 import { syncContent } from "@/lib/content-sync";
+import { claimDocumentVersion, getDocumentVersion } from "@/lib/document-version";
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, getCurrentUser, requireDepartmentAccess } from "@/lib/rbac";
 import { sanitizeDocumentHtml } from "@/lib/sanitize";
@@ -157,6 +159,21 @@ export async function createDocumentAction(
     data: { createdById: user.id },
   });
 
+  // O sync acabou de gravar a v1 como "alterada no filesystem", que é tudo o
+  // que ele sabe. Aqui a versão ganha autor e origem.
+  const created = await prisma.document.findUnique({
+    where: { filePath: toRelativePath(filePath) },
+    select: { id: true },
+  });
+  if (created) {
+    await claimDocumentVersion({
+      documentId: created.id,
+      contentHash: hashContent(fileContents),
+      source: "UI_CREATE",
+      authorId: user.id,
+    });
+  }
+
   revalidatePath("/", "layout");
   redirect(`/departamentos/${access.department.slug}/${documentSlug}`);
 }
@@ -220,6 +237,13 @@ export async function updateDocumentAction(
 
   await syncContent({ trigger: "DOCUMENT_CREATE", force: true });
 
+  await claimDocumentVersion({
+    documentId: existing.id,
+    contentHash: hashContent(fileContents),
+    source: "UI_EDIT",
+    authorId: user.id,
+  });
+
   revalidatePath("/", "layout");
   redirect(`/departamentos/${access.department.slug}/${documentSlug}`);
 }
@@ -269,6 +293,81 @@ export async function deleteDocumentAction(
 
   revalidatePath("/", "layout");
   redirect(`/departamentos/${access.department.slug}`);
+}
+
+// ---------------------------------------------------------------------------
+// Restauração de versão
+// ---------------------------------------------------------------------------
+
+/**
+ * Restaurar não desfaz: reescreve o arquivo com o conteúdo da versão antiga e
+ * deixa o sync gravar isso como uma versão NOVA. O histórico só cresce — o que
+ * estava publicado antes da restauração continua recuperável, e é justamente
+ * quem restaurou por engano que mais vai precisar disso.
+ */
+export async function restoreDocumentVersionAction(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const departmentSlug = String(formData.get("departmentSlug") ?? "");
+  const documentSlug = String(formData.get("documentSlug") ?? "");
+  const version = Number(formData.get("version"));
+
+  if (!isValidSlug(departmentSlug) || !isValidSlug(documentSlug)) {
+    return actionError("Documento inválido.");
+  }
+  if (!Number.isInteger(version) || version < 1) {
+    return actionError("Versão inválida.");
+  }
+
+  const { user, access } = await requireDepartmentAccess(
+    departmentSlug,
+    PERMISSIONS.documentEdit,
+  );
+
+  const existing = await prisma.document.findUnique({
+    where: {
+      departmentId_slug: { departmentId: access.department.id, slug: documentSlug },
+    },
+  });
+
+  if (!existing || existing.isOrphan) {
+    return actionError("Esta documentação não existe mais.");
+  }
+
+  const snapshot = await getDocumentVersion(existing.id, version);
+  if (!snapshot) return actionError("Esta versão não existe mais no histórico.");
+
+  if (snapshot.contentHash === existing.contentHash) {
+    return actionError("Esta já é a versão publicada — não há o que restaurar.");
+  }
+
+  try {
+    // Grava o arquivo byte a byte como estava, front-matter incluído: é para
+    // isso que o snapshot guarda o arquivo inteiro, e não só o corpo.
+    await fs.writeFile(
+      documentFile(departmentSlug, documentSlug),
+      snapshot.rawHtml,
+      "utf8",
+    );
+  } catch (error) {
+    console.error("[restoreDocumentVersionAction] falha ao gravar arquivo:", error);
+    return actionError(
+      "Não foi possível gravar o arquivo. Verifique as permissões da pasta.",
+    );
+  }
+
+  await syncContent({ trigger: "DOCUMENT_CREATE", force: true });
+
+  await claimDocumentVersion({
+    documentId: existing.id,
+    contentHash: snapshot.contentHash,
+    source: "RESTORE",
+    authorId: user.id,
+  });
+
+  revalidatePath("/", "layout");
+  redirect(`/departamentos/${access.department.slug}/${documentSlug}`);
 }
 
 // ---------------------------------------------------------------------------
