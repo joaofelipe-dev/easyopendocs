@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
+  CalendarX,
   FileText,
   FolderTree,
   KeyRound,
@@ -12,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
+import { reviewStatus } from "@/lib/review-cycle";
 
 export const metadata: Metadata = { title: "Administração" };
 
@@ -44,6 +46,12 @@ export default async function AdminOverviewPage() {
     prisma.userDepartmentRole.count(),
     prisma.syncLog.findFirst({ orderBy: { startedAt: "desc" } }),
   ]);
+
+  const overdueByDepartment = await countOverdueByDepartment();
+  const overdueTotal = overdueByDepartment.reduce(
+    (total, entry) => total + entry.overdue,
+    0,
+  );
 
   const stats = [
     {
@@ -100,6 +108,49 @@ export default async function AdminOverviewPage() {
           </Link>
         ))}
       </div>
+
+      <Card className={overdueTotal > 0 ? "border-destructive/40" : undefined}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CalendarX className="size-4" />
+            Revisão de conteúdo
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {overdueByDepartment.length === 0 ? (
+            <p className="text-muted-foreground">
+              Nenhum departamento definiu ciclo de revisão. Declare{" "}
+              <code className="font-mono">reviewEveryDays</code> no{" "}
+              <code className="font-mono">_departamento.json</code>, ou{" "}
+              <code className="font-mono">reviewEvery</code> no front-matter de
+              uma documentação, para acompanhar aqui.
+            </p>
+          ) : overdueTotal === 0 ? (
+            <p className="text-muted-foreground">
+              Nenhuma documentação com revisão vencida.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {overdueByDepartment
+                .filter((entry) => entry.overdue > 0)
+                .map((entry) => (
+                  <li key={entry.slug} className="flex items-center justify-between gap-3">
+                    <Link
+                      href={`/departamentos/${entry.slug}?revisao=vencidas`}
+                      className="underline-offset-4 hover:underline"
+                    >
+                      {entry.name}
+                    </Link>
+                    <Badge variant="destructive">
+                      {entry.overdue}{" "}
+                      {entry.overdue === 1 ? "vencida" : "vencidas"}
+                    </Badge>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -181,4 +232,59 @@ export default async function AdminOverviewPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Conta as documentações com revisão vencida por departamento.
+ *
+ * O vencimento depende do intervalo do documento OU do padrão do
+ * departamento, e da data de revisão OU do mtime como fallback — regra demais
+ * para caber num `where` do Prisma sem duplicá-la em SQL. Traz só os campos do
+ * cálculo e resolve em memória, com a mesma função que as telas usam: uma
+ * segunda implementação divergiria da primeira em silêncio.
+ */
+async function countOverdueByDepartment(): Promise<
+  Array<{ slug: string; name: string; overdue: number }>
+> {
+  const departments = await prisma.department.findMany({
+    where: { isOrphan: false },
+    orderBy: { name: "asc" },
+    select: {
+      slug: true,
+      name: true,
+      reviewIntervalDays: true,
+      documents: {
+        where: { isOrphan: false },
+        select: {
+          reviewIntervalDays: true,
+          lastReviewedAt: true,
+          fileMtime: true,
+        },
+      },
+    },
+  });
+
+  return departments
+    .map((department) => {
+      const statuses = department.documents.map((document) =>
+        reviewStatus({
+          documentIntervalDays: document.reviewIntervalDays,
+          departmentIntervalDays: department.reviewIntervalDays,
+          lastReviewedAt: document.lastReviewedAt,
+          fallbackDate: document.fileMtime,
+        }),
+      );
+
+      return {
+        slug: department.slug,
+        name: department.name,
+        overdue: statuses.filter((status) => status.kind === "overdue").length,
+        // Nenhuma documentação no ciclo = o departamento não participa.
+        participates: statuses.some((status) => status.kind !== "off"),
+      };
+    })
+    // Departamento fora do ciclo não vira linha de "0 vencidas": listá-lo
+    // sugeriria que participa e está em dia.
+    .filter((entry) => entry.participates)
+    .map(({ slug, name, overdue }) => ({ slug, name, overdue }));
 }

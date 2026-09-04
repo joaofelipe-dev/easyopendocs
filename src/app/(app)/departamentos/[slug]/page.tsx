@@ -3,11 +3,13 @@ import Link from "next/link";
 import { FileText, FilePlus2, Inbox } from "lucide-react";
 
 import { SearchBox } from "@/components/search-box";
+import { ReviewBadge } from "@/components/review-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, can, requireDepartmentAccess } from "@/lib/rbac";
+import { reviewStatus, type ReviewStatus } from "@/lib/review-cycle";
 
 export const dynamic = "force-dynamic";
 
@@ -31,14 +33,33 @@ const DATE_FORMAT = new Intl.DateTimeFormat("pt-BR", {
 
 export default async function DepartmentPage({
   params,
+  searchParams,
 }: PageProps<"/departamentos/[slug]">) {
   const { slug } = await params;
   const { access } = await requireDepartmentAccess(slug);
+  const query = await searchParams;
 
-  const documents = await prisma.document.findMany({
+  const rows = await prisma.document.findMany({
     where: { departmentId: access.department.id, isOrphan: false },
     orderBy: { title: "asc" },
   });
+
+  const documents = rows.map((document) => ({
+    ...document,
+    review: reviewStatus({
+      documentIntervalDays: document.reviewIntervalDays,
+      departmentIntervalDays: access.department.reviewIntervalDays,
+      lastReviewedAt: document.lastReviewedAt,
+      // Sem `reviewedAt` no arquivo, a última alteração conta como revisão.
+      fallbackDate: document.fileMtime,
+    }) satisfies ReviewStatus,
+  }));
+
+  const overdueCount = documents.filter((d) => d.review.kind === "overdue").length;
+  const onlyOverdue = query.revisao === "vencidas";
+  const visible = onlyOverdue
+    ? documents.filter((d) => d.review.kind === "overdue")
+    : documents;
 
   const canCreate = can(access, PERMISSIONS.documentCreate);
 
@@ -90,6 +111,23 @@ export default async function DepartmentPage({
         />
       ) : null}
 
+      {overdueCount > 0 ? (
+        <nav aria-label="Filtrar por revisão" className="mb-6 flex flex-wrap gap-2">
+          <FilterChip
+            href={`/departamentos/${access.department.slug}`}
+            active={!onlyOverdue}
+          >
+            Todas ({documents.length})
+          </FilterChip>
+          <FilterChip
+            href={`/departamentos/${access.department.slug}?revisao=vencidas`}
+            active={onlyOverdue}
+          >
+            Revisão vencida ({overdueCount})
+          </FilterChip>
+        </nav>
+      ) : null}
+
       {documents.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
@@ -108,7 +146,7 @@ export default async function DepartmentPage({
         </Card>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
-          {documents.map((document) => (
+          {visible.map((document) => (
             <li key={document.id}>
               <Link
                 href={`/departamentos/${access.department.slug}/${document.slug}`}
@@ -132,6 +170,7 @@ export default async function DepartmentPage({
                     <p className="text-muted-foreground text-xs">
                       Atualizado em {DATE_FORMAT.format(document.fileMtime)}
                     </p>
+                    <ReviewBadge status={document.review} />
                   </CardContent>
                 </Card>
               </Link>
@@ -140,5 +179,29 @@ export default async function DepartmentPage({
         </ul>
       )}
     </main>
+  );
+}
+
+function FilterChip({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "true" : undefined}
+      className={
+        active
+          ? "bg-primary text-primary-foreground rounded-full border border-transparent px-3 py-1 text-xs"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted rounded-full border px-3 py-1 text-xs transition-colors"
+      }
+    >
+      {children}
+    </Link>
   );
 }

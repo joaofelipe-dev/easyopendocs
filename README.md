@@ -409,6 +409,55 @@ porque é rota de verdade.
 
 ---
 
+## Ciclo de revisão
+
+Documentação interna apodrece em silêncio: nada dizia "isto não é revisado há
+catorze meses", que é como um portal perde a confiança de quem o lê.
+
+A fonte é o arquivo, como todo o resto:
+
+```html
+<!-- reviewEvery: 180 -->        <!-- dias entre revisões -->
+<!-- reviewedAt: 2026-09-04 -->  <!-- data da última revisão -->
+```
+
+E o padrão do departamento vai no `_departamento.json`:
+
+```json
+{ "name": "Engenharia", "reviewEveryDays": 180 }
+```
+
+O `reviewEvery` do documento sobrepõe o padrão do departamento. **Sem nenhum
+dos dois, a documentação não participa do ciclo** — nada de selo em quem nunca
+pediu para ser acompanhado, o que é o estado de qualquer portal antes de alguém
+decidir usar isto.
+
+Com o ciclo ligado, aparece um selo — **em dia**, **vence em N dias** ou
+**vencida há N dias** — na tela do documento e na listagem do departamento, um
+filtro "revisão vencida" na listagem, e a contagem por departamento no
+`/admin`.
+
+- **Sem `reviewedAt`, a data de alteração do arquivo conta como última
+  revisão.** Sem esse padrão, ligar o ciclo num departamento marcaria toda a
+  documentação existente como vencida no mesmo dia.
+- **O aviso de "vence em breve" é proporcional:** um quarto do ciclo, no máximo
+  14 dias. Um ciclo de 30 dias não passa metade da vida "quase vencendo", e um
+  ciclo anual não avisa com três meses de antecedência.
+- **Valor estragado é ignorado.** O arquivo é editável à mão; um
+  `reviewEvery: sempre que der` não vira selo nenhum, em vez de virar um selo
+  errado.
+
+**Marcar como revisada** (permissão `document:edit`) carimba a data de hoje em
+`reviewedAt` **alterando só essa linha do arquivo** — revisar não é editar, e
+uma revisão não deve reformatar o HTML de quem escreveu à mão.
+
+> Editar pela UI **preserva** `reviewEvery`, `reviewedAt` e qualquer outra
+> chave de front-matter que a tela não conhece. A tela remonta o cabeçalho a
+> partir do formulário, então sem isso uma única edição desligaria o ciclo do
+> documento.
+
+---
+
 ## Permissionamento
 
 Um usuário pode ter **vários papéis, em vários departamentos, ao mesmo tempo**.
@@ -640,6 +689,7 @@ easyopendocs/
     │   ├── search-index.ts       # escrita do índice — quem chama é o sync
     │   ├── document-version.ts   # histórico: snapshot, retenção, autoria
     │   ├── text-diff.ts          # comparação por bloco entre duas versões
+    │   ├── review-cycle.ts       # ciclo de revisão (função pura)
     │   ├── department-responsibilities.ts       # schema e regras do mapa
     │   ├── responsibilities-graph.ts            # layout do diagrama (função pura)
     │   ├── department-responsibilities-file.ts  # leitura/escrita do JSON

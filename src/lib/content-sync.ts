@@ -20,6 +20,13 @@ import {
   indexDocumentSearch,
 } from "@/lib/search-index";
 import { recordDocumentVersion } from "@/lib/document-version";
+import {
+  DEPARTMENT_REVIEW_KEY,
+  REVIEWED_AT_KEY,
+  REVIEW_EVERY_KEY,
+  parseReviewInterval,
+  parseReviewedAt,
+} from "@/lib/review-cycle";
 
 /**
  * Indexador do filesystem -> Postgres.
@@ -95,6 +102,8 @@ type ScannedDepartment = {
   slug: string;
   name: string;
   description: string | null;
+  /** `reviewEveryDays` do `_departamento.json`, o padrão do ciclo de revisão. */
+  reviewIntervalDays: number | null;
   relativePath: string;
   documents: ScannedDocument[];
 };
@@ -102,13 +111,17 @@ type ScannedDepartment = {
 async function readDepartmentMeta(
   dir: string,
   slug: string,
-): Promise<{ name: string; description: string | null }> {
+): Promise<{
+  name: string;
+  description: string | null;
+  reviewIntervalDays: number | null;
+}> {
   try {
     const raw = await fs.readFile(path.join(dir, DEPARTMENT_META_FILE), "utf8");
     const parsed: unknown = JSON.parse(raw);
 
     if (parsed && typeof parsed === "object") {
-      const meta = parsed as { name?: unknown; description?: unknown };
+      const meta = parsed as Record<string, unknown>;
       return {
         name:
           typeof meta.name === "string" && meta.name.trim()
@@ -118,13 +131,14 @@ async function readDepartmentMeta(
           typeof meta.description === "string" && meta.description.trim()
             ? meta.description.trim()
             : null,
+        reviewIntervalDays: parseReviewInterval(meta[DEPARTMENT_REVIEW_KEY]),
       };
     }
   } catch {
     // Sem metadados (ou JSON inválido): o nome humanizado do slug já serve.
   }
 
-  return { name: humanizeSlug(slug), description: null };
+  return { name: humanizeSlug(slug), description: null, reviewIntervalDays: null };
 }
 
 async function scanContentTree(): Promise<ScannedDepartment[]> {
@@ -158,6 +172,7 @@ async function scanContentTree(): Promise<ScannedDepartment[]> {
       slug: entry.name,
       name: meta.name,
       description: meta.description,
+      reviewIntervalDays: meta.reviewIntervalDays,
       relativePath: toRelativePath(dir),
       documents,
     });
@@ -290,6 +305,7 @@ async function upsertDepartment(scanned: ScannedDepartment, stats: SyncStats) {
         slug: scanned.slug,
         name: scanned.name,
         description: scanned.description,
+        reviewIntervalDays: scanned.reviewIntervalDays,
         path: scanned.relativePath,
         isOrphan: false,
       },
@@ -299,6 +315,7 @@ async function upsertDepartment(scanned: ScannedDepartment, stats: SyncStats) {
   const changed =
     existing.name !== scanned.name ||
     existing.description !== scanned.description ||
+    existing.reviewIntervalDays !== scanned.reviewIntervalDays ||
     existing.path !== scanned.relativePath ||
     existing.isOrphan;
 
@@ -310,6 +327,7 @@ async function upsertDepartment(scanned: ScannedDepartment, stats: SyncStats) {
     data: {
       name: scanned.name,
       description: scanned.description,
+      reviewIntervalDays: scanned.reviewIntervalDays,
       path: scanned.relativePath,
       isOrphan: false,
     },
@@ -373,6 +391,8 @@ async function syncDepartmentDocuments(
     const title = extractTitle(raw, frontMatter, file.slug);
     const description = extractDescription(frontMatter);
     const plainText = documentPlainText(raw);
+    const reviewIntervalDays = parseReviewInterval(frontMatter[REVIEW_EVERY_KEY]);
+    const lastReviewedAt = parseReviewedAt(frontMatter[REVIEWED_AT_KEY]);
 
     if (existing) {
       await prisma.document.update({
@@ -380,6 +400,8 @@ async function syncDepartmentDocuments(
         data: {
           title,
           description,
+          reviewIntervalDays,
+          lastReviewedAt,
           filePath: file.relativePath,
           contentHash,
           fileMtime: file.mtime,
@@ -418,6 +440,8 @@ async function syncDepartmentDocuments(
           slug: file.slug,
           title,
           description,
+          reviewIntervalDays,
+          lastReviewedAt,
           filePath: file.relativePath,
           contentHash,
           fileMtime: file.mtime,
