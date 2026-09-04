@@ -238,6 +238,63 @@ como o vetor é montado é uma questão de incrementar `SEARCH_INDEX_VERSION` em
 [`src/lib/search-index.ts`](src/lib/search-index.ts) — a reindexação acontece no
 próximo sync, sem `?force=1`.
 
+## Histórico de versões
+
+Toda mudança de conteúdo de uma documentação vira uma **versão** — inclusive as
+feitas fora do portal, direto no arquivo. Quem grava é o sync, no mesmo ponto em
+que ele já lê o arquivo do disco, então um `git pull`, um upload por FTP ou um
+`cp` no servidor entram no histórico igual a uma edição pela tela.
+
+Em `/departamentos/{departamento}/{documento}/historico`:
+
+- a lista de versões, com data, autor, tamanho e a variação em relação à
+  anterior;
+- a origem de cada uma: **criada pelo portal**, **editada pelo portal**,
+  **alterada no filesystem** ou **restaurada**;
+- `?v=N` mostra aquela versão renderizada, passando pelo mesmo sanitizador da
+  publicação — um snapshot antigo não escapa de uma regra de sanitização que
+  mudou depois;
+- `?de=N&para=M` compara duas versões;
+- **Restaurar** (exige `document:edit`) reescreve o arquivo no disco com o
+  conteúdo daquela versão.
+
+Ver o histórico exige `document:read`, a mesma permissão do documento.
+
+### Restaurar avança, não volta
+
+A restauração grava uma versão NOVA com o conteúdo antigo. O que estava
+publicado no momento da restauração continua no histórico e pode ser
+restaurado de volta — que é exatamente do que precisa quem restaurou por
+engano. O histórico só cresce.
+
+O snapshot guarda o **arquivo inteiro**, front-matter incluído, e é por isso
+que a restauração é byte a byte: o portal não remonta o cabeçalho torcendo
+para dar igual.
+
+### Comparação por bloco, não por linha
+
+O editor do portal grava o corpo inteiro numa linha só; um arquivo escrito à
+mão vem indentado em dezenas de linhas. Um diff por linha diria "tudo removido,
+tudo adicionado" em toda edição feita pela tela — o caso mais comum. Por isso
+[`src/lib/text-diff.ts`](src/lib/text-diff.ts) quebra nas bordas das tags de
+bloco antes de comparar, e trata quebra de linha como espaço em branco.
+
+O preço assumido: uma mudança que existe só na indentação de dentro de um
+`<pre>` não aparece na comparação. A restauração continua byte a byte de
+qualquer forma.
+
+### Retenção
+
+Ficam guardadas as **50 últimas** versões de cada documento
+(`DOCUMENT_HISTORY_LIMIT`). O snapshot é o texto completo, então sem teto o
+banco cresceria proporcional ao número de salvamentos, não ao de documentos.
+A numeração das versões nunca é reaproveitada: podar as antigas não renumera as
+que ficam.
+
+Documentações já indexadas antes desta versão do portal não ganham histórico
+retroativo — não há de onde tirá-lo. A primeira versão delas nasce na próxima
+vez que o conteúdo mudar.
+
 ---
 
 ## Como criar um departamento
@@ -428,7 +485,9 @@ Há dois ativos com estado que precisam de backup — nenhum dos dois é
 reconstruível a partir do outro:
 
 1. **Banco Postgres** — usuários, senhas, papéis/permissões (RBAC), atribuições
-   usuário↔departamento e metadados de documento (autor, hash, histórico).
+   usuário↔departamento, metadados de documento (autor, hash) e o **histórico
+   de versões**, que é o único lugar onde o conteúdo anterior de uma
+   documentação existe.
 2. **`content/departamentos/`** — o HTML de cada documentação e o
    `_responsabilidades.json` de cada departamento, a fonte de verdade do
    conteúdo.
@@ -512,6 +571,7 @@ deploy por botão sem expor o servidor.
 | `NEXTAUTH_URL`       | sim         | URL base da aplicação                                        |
 | `CONTENT_ROOT`       | não         | Raiz das documentações (padrão `content/departamentos`)       |
 | `SYNC_THROTTLE_MS`   | não         | Janela entre syncs automáticos (padrão `3000`)               |
+| `DOCUMENT_HISTORY_LIMIT` | não     | Versões guardadas por documento (padrão `50`)                |
 | `ADMIN_NAME`         | não         | Nome do super admin do seed                                  |
 | `ADMIN_EMAIL`        | não         | E-mail do super admin do seed                                |
 | `ADMIN_PASSWORD`     | não         | Senha do super admin do seed (padrão `admin123`)             |
@@ -541,7 +601,7 @@ easyopendocs/
     │   ├── (app)/sem-acesso/
     │   ├── (app)/departamentos/[slug]/                     # layout + sidebar
     │   ├── (app)/departamentos/[slug]/responsabilidades/   # mapa + edição
-    │   ├── (app)/departamentos/[slug]/[docSlug]/           # doc + edição
+    │   ├── (app)/departamentos/[slug]/[docSlug]/           # doc + edição + histórico
     │   ├── (app)/departamentos/[slug]/nova-documentacao/
     │   ├── (app)/admin/                                    # usuários, deps, papéis, sync
     │   └── api/{auth,sync,media}/                          # media = upload + serving de imagem/vídeo
@@ -556,6 +616,8 @@ easyopendocs/
     │   ├── content-sync.ts       # indexador filesystem -> Postgres
     │   ├── search.ts             # consulta da busca (respeita o RBAC)
     │   ├── search-index.ts       # escrita do índice — quem chama é o sync
+    │   ├── document-version.ts   # histórico: snapshot, retenção, autoria
+    │   ├── text-diff.ts          # comparação por bloco entre duas versões
     │   ├── department-responsibilities.ts       # schema e regras do mapa
     │   ├── department-responsibilities-file.ts  # leitura/escrita do JSON
     │   ├── document-render.ts    # sanitização + âncoras + índice

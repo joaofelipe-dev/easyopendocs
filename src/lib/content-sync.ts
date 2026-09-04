@@ -19,6 +19,7 @@ import {
   documentPlainText,
   indexDocumentSearch,
 } from "@/lib/search-index";
+import { recordDocumentVersion } from "@/lib/document-version";
 
 /**
  * Indexador do filesystem -> Postgres.
@@ -393,6 +394,22 @@ async function syncDepartmentDocuments(
         description,
         plainText,
       });
+
+      // Só versiona quando o conteúdo mudou de verdade. Um sync com `force`
+      // chega aqui para TODO arquivo do disco, inclusive os intocados — e o
+      // portal dispara justamente um `force` a cada gravação pela UI, então
+      // sem esta checagem uma única edição criaria uma versão nova em cada
+      // documento do portal.
+      if (existing.contentHash !== contentHash) {
+        await recordDocumentVersion({
+          documentId: existing.id,
+          title,
+          description,
+          rawHtml: raw,
+          contentHash,
+        });
+      }
+
       stats.documentsUpdated += 1;
     } else {
       const created = await prisma.document.create({
@@ -415,6 +432,15 @@ async function syncDepartmentDocuments(
         description,
         plainText,
       });
+
+      await recordDocumentVersion({
+        documentId: created.id,
+        title,
+        description,
+        rawHtml: raw,
+        contentHash,
+      });
+
       stats.documentsCreated += 1;
     }
   }

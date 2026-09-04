@@ -9,6 +9,7 @@ export { seedPermissionsAndRoles, upsertUser, assignRole } from "@/lib/rbac-seed
  */
 const TABLES = [
   "SyncLog",
+  "DocumentVersion",
   "UserDepartmentRole",
   "RolePermission",
   "Document",

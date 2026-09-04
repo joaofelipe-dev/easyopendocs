@@ -28,6 +28,7 @@ model User {
 
   departmentRoles UserDepartmentRole[]
   createdDocuments Document[]         @relation("DocumentAuthor")
+  documentVersions DocumentVersion[]  @relation("DocumentVersionAuthor")
 
   @@index([email])
 }
@@ -140,10 +141,51 @@ model Document {
 
   department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   createdBy  User?      @relation("DocumentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  versions   DocumentVersion[]
 
   @@unique([departmentId, slug])
   @@index([departmentId, isOrphan])
   @@index([searchVector], type: Gin)
+}
+
+/// De onde veio a versão. `FILESYSTEM` é o padrão quando o sync acha conteúdo
+/// novo sem que nenhuma tela do portal tenha pedido — git, FTP, `cp` no
+/// servidor. Distinguir isso é metade do motivo de o histórico existir.
+enum DocumentVersionSource {
+  UI_CREATE
+  UI_EDIT
+  FILESYSTEM
+  RESTORE
+}
+
+/// Snapshot do arquivo a cada mudança de conteúdo detectada pelo sync.
+///
+/// Guarda o arquivo INTEIRO, front-matter incluído: é o que permite restaurar
+/// byte a byte, sem remontar o cabeçalho e torcer para dar igual. Fica no
+/// Postgres, não no disco, porque é histórico derivado — o filesystem continua
+/// sendo a fonte de verdade do conteúdo ATUAL, e só dele.
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  /// Sequencial por documento, começando em 1. Nunca reaproveitado: a poda por
+  /// retenção apaga versões antigas, mas não renumera as que ficam.
+  version     Int
+  title       String
+  description String?
+  /// O conteúdo bruto do arquivo, exatamente como estava no disco.
+  rawHtml     String
+  contentHash String
+  byteSize    Int      @default(0)
+  source      DocumentVersionSource @default(FILESYSTEM)
+  authorId    String?
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author   User?    @relation("DocumentVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([documentId, version])
+  @@index([documentId, createdAt])
+  @@index([authorId])
 }
 
 // ---------------------------------------------------------------------------
