@@ -152,7 +152,7 @@ export default async function DepartmentPage({
                 href={`/departamentos/${access.department.slug}/${document.slug}`}
                 className="focus-visible:ring-ring block h-full rounded-xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
-                <Card className="hover:border-foreground/20 h-full gap-3 transition-colors">
+                <Card className="hover:border-neu-edge h-full gap-3 transition-[box-shadow,border-color,transform] duration-200 hover:-translate-y-0.5 hover:shadow-neu-pop">
                   <CardHeader>
                     <span className="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-lg">
                       <FileText className="size-4" />
