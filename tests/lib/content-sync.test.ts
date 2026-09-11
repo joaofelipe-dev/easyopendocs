@@ -10,9 +10,9 @@ import { prisma } from "@/lib/prisma";
 /**
  * syncContent() é o coração do "filesystem é a fonte de verdade" (README).
  * Estes testes escrevem arquivos de verdade num CONTENT_ROOT temporário (ver
- * tests/setup.ts) e leem o Postgres de teste de verdade depois — nada aqui é
- * mockado, porque mockar fs OU banco seria reimplementar a própria função sob
- * outro nome e testar a cópia, não o original.
+ * tests/setup.ts) e leem o banco de teste (SQLite) de verdade depois — nada
+ * aqui é mockado, porque mockar fs OU banco seria reimplementar a própria
+ * função sob outro nome e testar a cópia, não o original.
  */
 
 function departmentDir(slug: string): string {

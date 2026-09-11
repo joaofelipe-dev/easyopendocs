@@ -13,9 +13,9 @@ import { SEARCH_INDEX_VERSION } from "@/lib/search-index";
 
 /**
  * Busca full-text de ponta a ponta: arquivo real no disco -> sync real ->
- * tsvector real no Postgres -> consulta real. O índice mora no banco e a
- * configuração `pt_unaccent` vem de uma migration, então mockar qualquer uma
- * das pontas testaria uma busca que não é a que roda em produção.
+ * índice FTS5 real no SQLite de teste -> consulta real. O índice mora no banco
+ * e o tokenizer (acento) vem da migration, então mockar qualquer uma das
+ * pontas testaria uma busca que não é a que roda em produção.
  */
 
 async function writeDocument(
@@ -213,12 +213,15 @@ describe("searchDocuments", () => {
     await syncContent({ trigger: "MANUAL", force: true });
 
     // Simula o estado de quem já tinha o portal rodando antes da busca
-    // existir: linha indexada, vetor vazio, versão antiga. Sem o backfill
-    // automático, esse documento ficaria invisível para sempre.
-    await prisma.$executeRaw`
-      UPDATE "Document"
-         SET "searchVector" = NULL, "plainText" = '', "searchVersion" = 0
-    `;
+    // existir: linha sem índice (row FTS apagada), texto vazio, versão antiga.
+    // Sem o backfill automático, esse documento ficaria invisível para sempre.
+    await prisma.$transaction([
+      prisma.$executeRaw`DELETE FROM "DocumentFts"`,
+      prisma.$executeRaw`
+        UPDATE "Document"
+           SET "plainText" = '', "searchVersion" = 0
+      `,
+    ]);
 
     const user = await createUser({ isSuperAdmin: true });
     expect(await searchDocuments(user, "restore")).toHaveLength(0);

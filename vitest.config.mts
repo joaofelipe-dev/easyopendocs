@@ -6,15 +6,15 @@ const srcDir = fileURLToPath(new URL("./src", import.meta.url));
 const serverOnlyStub = fileURLToPath(new URL("./tests/stubs/server-only.ts", import.meta.url));
 
 /**
- * Testes de integração/funcionais: batem num Postgres de teste real (não
+ * Testes de integração/funcionais: batem num SQLite de teste real (não
  * mockado) e num CONTENT_ROOT temporário — ver tests/README.md.
  *
  * `fileParallelism: false` porque todo arquivo de teste compartilha o mesmo
- * Postgres de teste e o `beforeEach` de tests/setup.ts trunca as tabelas antes
- * de cada teste. Rodar arquivos em paralelo faria um arquivo apagar os dados
- * que outro acabou de inserir. Isolamento entre TESTES (dentro de um mesmo
- * arquivo) já é serial por padrão do Vitest — só entre ARQUIVOS que precisa
- * ser forçado aqui.
+ * SQLite de teste (mesmo arquivo) e o `beforeEach` de tests/setup.ts limpa as
+ * tabelas antes de cada teste. Rodar arquivos em paralelo faria um arquivo
+ * apagar os dados que outro acabou de inserir. Isolamento entre TESTES (dentro
+ * de um mesmo arquivo) já é serial por padrão do Vitest — só entre ARQUIVOS
+ * que precisa ser forçado aqui.
  */
 export default defineConfig({
   resolve: {

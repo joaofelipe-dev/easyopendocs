@@ -1,6 +1,7 @@
 # Testes
 
-Testes de integração/funcionais: batem num Postgres de teste real e num
+Testes de integração/funcionais: batem num SQLite de teste real (arquivo
+`data/easyopendocs-test.db`, criado e depletado a cada execução) e num
 `CONTENT_ROOT` temporário. Nada de banco, disco ou sanitizador mockado — ver
 "Por que não mockar" mais abaixo, e a skill `.claude/skills/functional-tests/`
 para o raciocínio completo por trás disso.
@@ -8,19 +9,17 @@ para o raciocínio completo por trás disso.
 ## Rodar
 
 ```bash
-docker compose up -d --wait   # se ainda não estiver de pé
-npm test                      # roda uma vez
+npm test                      # roda uma vez (migrations aplicadas sozinhas)
 npm run test:watch            # modo watch
 ```
 
 Só precisa de `TEST_DATABASE_URL` no `.env` (já vem preenchida no
-`.env.example` — mesma instância do `docker-compose.yml`, banco
-`easyopendocs_test`, separado do banco de desenvolvimento). Na primeira execução,
-`tests/global-setup.ts` cria esse banco sozinho e aplica as migrations; não
-precisa rodar nada manualmente antes.
+`.env.example` — `file:./data/easyopendocs-test.db`, arquivo separado do banco
+de desenvolvimento). Na primeira execução, `tests/global-setup.ts` recria esse
+arquivo e aplica as migrations; não precisa rodar nada manualmente antes.
 
-Em CI, o job `test` do `.github/workflows/ci.yml` sobe seu próprio Postgres
-de serviço — mesma lógica, sem precisar do Docker Compose local.
+Em CI, o job `test` do `.github/workflows/ci.yml` usa a mesma variável — não há
+serviço de banco nenhum, exatamente como em produção.
 
 ## O que cada arquivo cobre
 
@@ -30,7 +29,7 @@ de serviço — mesma lógica, sem precisar do Docker Compose local.
 | `tests/lib/rbac.test.ts` | `getDepartmentAccess`/`can`/`listAccessibleDepartments` contra banco real: união de papéis, super admin, departamento órfão, revogação sem cache |
 | `tests/lib/content-sync.test.ts` | `syncContent` contra disco+banco reais: criação, skip por mtime/hash, órfão de documento e de departamento, retorno (un-orphan) |
 | `tests/lib/department-responsibilities.test.ts` | `parseResponsibilities`/`resolveResponsibilities` — lógica pura, ids, poda de `deliversTo` órfão, cálculo de "sem documentação" |
-| `tests/lib/search.test.ts` | `searchDocuments` contra o tsvector real: acerto no corpo, busca sem acento, recorte por `document:read`, órfão fora, ranking por peso e o backfill automático do índice |
+| `tests/lib/search.test.ts` | `searchDocuments` contra o índice FTS5 real: acerto no corpo, busca sem acento (nos dois sentidos), recorte por `document:read`, órfão fora, ranking por peso (título > corpo) e o backfill automático do índice |
 | `tests/lib/document-version.test.ts` | Histórico contra disco+banco reais: v1 na indexação, `force` não versiona documento intocado, edição por fora, retenção, atribuição de autoria |
 | `tests/lib/text-diff.test.ts` | `diffDocuments` — lógica pura: HTML indentado à mão casando com o de uma linha só que o editor gera, colapso de blocos iguais, teto de tamanho |
 | `tests/lib/responsibilities-graph.test.ts` | `buildResponsibilitiesGraph` — layout do diagrama: blocos que não se sobrepõem, texto dentro da caixa, quebra de título, aresta para id inexistente descartada |
@@ -64,15 +63,15 @@ verdade. Ver `tests/setup.ts` para onde esse mock vive.
    de diretório no meio do arquivo). Um arquivo de teste que escreve fixtures
    em disco em mais de um `it()` — como `content-sync.test.ts` — precisa de um
    `beforeEach` LOCAL que limpe o conteúdo do diretório (não o backend, o
-   Postgres já é limpo globalmente). Sem isso, arquivo escrito por um teste
+   banco já é limpo globalmente). Sem isso, arquivo escrito por um teste
    continua ali quando o próximo roda, e é redescoberto como se fosse dele —
    isso já aconteceu ao escrever `content-sync.test.ts` (5 dos 9 testes
    falharam por contagem errada até o `beforeEach` local entrar).
 
 ## `fileParallelism: false`
 
-Todo arquivo de teste compartilha o mesmo Postgres de teste, e o `beforeEach`
-global trunca as tabelas antes de cada teste. Rodar arquivos em paralelo faria
-um arquivo apagar dados que outro acabou de inserir. Se a suíte crescer a
-ponto de isso pesar no tempo de CI, a saída é um banco (ou schema) por
+Todo arquivo de teste compartilha o mesmo SQLite de teste (mesmo arquivo), e o
+`beforeEach` global limpa as tabelas antes de cada teste. Rodar arquivos em
+paralelo faria um arquivo apagar dados que outro acabou de inserir. Se a suíte
+crescer a ponto de isso pesar no tempo de CI, a saída é um arquivo de banco por
 worker, não desligar essa flag.
