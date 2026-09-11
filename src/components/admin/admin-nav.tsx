@@ -28,8 +28,8 @@ export function AdminNav() {
             href={href}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "hover:bg-muted text-muted-foreground flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
-              isActive && "bg-muted text-foreground font-medium",
+              "hover:bg-muted text-muted-foreground flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-[background-color,box-shadow] duration-200",
+              isActive && "bg-muted text-foreground font-medium shadow-neu-inset",
             )}
           >
             <Icon className="size-4" />
