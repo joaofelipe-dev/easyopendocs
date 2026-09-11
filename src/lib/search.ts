@@ -1,29 +1,22 @@
 import "server-only";
 
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { listReadableDepartments, type CurrentUser } from "@/lib/rbac";
 import { sanitizeDocumentHtml } from "@/lib/sanitize";
-import { SEARCH_CONFIG } from "@/lib/search-index";
 
 /**
  * Lado da LEITURA da busca full-text. Quem preenche o índice é o sync, via
  * search-index.ts.
  *
- * A configuração `pt_unaccent` (criada na migration `add_document_search`) é
- * `portuguese` com o dicionário `unaccent` na frente: quem digita "manutencao"
- * acha "manutenção". Indexação e consulta usam a mesma config — se
- * divergirem, o radical gravado não bate com o procurado e a busca devolve
- * vazio, sem erro nenhum para denunciar.
+ * Índice: tabela virtual SQLite FTS5 `DocumentFts` (migration), com o tokenizer
+ * `unicode61 remove_diacritics 2`: caixa e acento são normalizados na
+ * indexação E na consulta, então quem digita "manutencao" acha "manutenção".
+ *
+ * Pesos da ordenação via `bm25(…, 5.0, 3.0, 1.0)`: acerto no título vale mais
+ * que na descrição, que vale mais que no corpo — o equivalente do
+ * setweight(A/B/C) que a versão tsvector usava.
  */
-
-/**
- * Trechos que o `ts_headline` devolve, já com `<mark>` nos termos achados.
- * O delimitador vai entre aspas porque o parser do Postgres come os espaços
- * de um valor sem aspas — sem elas, os dois fragmentos saem colados numa
- * palavra só ("programação…precisa").
- */
-const HEADLINE_OPTIONS =
-  'StartSel=<mark>, StopSel=</mark>, MaxFragments=2, FragmentDelimiter=" … ", MaxWords=24, MinWords=10, ShortWord=2';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -58,6 +51,30 @@ type SearchRow = {
 };
 
 /**
+ * Monta a expressão `MATCH` do FTS5 a partir do texto do usuário, sem deixar
+ * a sintaxe própria do FTS5 (aspas, `*`, `:` etc.) quebrar a consulta ou virar
+ * injeção de operador. Frases entre aspas viram frase exata; o restante vira
+ * palavras unidas por AND (mesmo comportamento do websearch que havia).
+ */
+function toFtsQuery(input: string): string {
+  const tokens =
+    input.match(/"[^"]+"|[\p{L}\p{N}][\p{L}\p{N}-]*/gu) ?? [];
+
+  const terms: string[] = [];
+  for (const token of tokens) {
+    if (token.startsWith('"') && token.endsWith('"')) {
+      const phrase = token.slice(1, -1).trim();
+      // Uma "frase" sem nenhuma palavra não casa com nada — descartar.
+      if (/[\p{L}\p{N}]/u.test(phrase)) terms.push(phrase);
+    } else {
+      terms.push(token);
+    }
+  }
+
+  return terms.length > 0 ? terms.map((term) => `"${term}"`).join(" AND ") : "";
+}
+
+/**
  * Busca dentro do que o usuário pode ler. O recorte de acesso vai no SQL, não
  * em memória: filtrar depois significaria decidir o `LIMIT` sobre documentos
  * que o usuário nem pode ver.
@@ -70,6 +87,9 @@ export async function searchDocuments(
   const trimmed = query.trim();
   if (!trimmed) return [];
 
+  const ftsQuery = toFtsQuery(trimmed);
+  if (!ftsQuery) return [];
+
   const departments = await listReadableDepartments(user);
   const scoped = options.departmentSlug
     ? departments.filter((department) => department.slug === options.departmentSlug)
@@ -78,7 +98,6 @@ export async function searchDocuments(
   if (scoped.length === 0) return [];
 
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const departmentIds = scoped.map((department) => department.id);
 
   const rows = await prisma.$queryRaw<SearchRow[]>`
     SELECT d."id"           AS "documentId",
@@ -87,20 +106,19 @@ export async function searchDocuments(
            d."description"  AS "description",
            dep."slug"       AS "departmentSlug",
            dep."name"       AS "departmentName",
-           ts_headline(
-             ${SEARCH_CONFIG}::regconfig,
-             coalesce(nullif(d."plainText", ''), d."description", d."title"),
-             q,
-             ${HEADLINE_OPTIONS}
+           coalesce(
+             NULLIF(highlight(DocumentFts, 3, '<mark>', '</mark>'), ''),
+             NULLIF(d."description", ''),
+             d."title"
            )                AS "snippetHtml",
-           ts_rank_cd(d."searchVector", q) AS "rank"
-      FROM "Document" d
-      JOIN "Department" dep ON dep."id" = d."departmentId",
-           websearch_to_tsquery(${SEARCH_CONFIG}::regconfig, ${trimmed}) q
-     WHERE d."isOrphan" = false
-       AND d."departmentId" = ANY(${departmentIds}::text[])
-       AND d."searchVector" @@ q
-     ORDER BY "rank" DESC, d."title" ASC
+           bm25(DocumentFts, 5.0, 3.0, 1.0) AS "rank"
+      FROM DocumentFts
+      JOIN "Document" d    ON d."id" = DocumentFts."documentId"
+      JOIN "Department" dep ON dep."id" = d."departmentId"
+     WHERE DocumentFts MATCH ${ftsQuery}
+       AND d."departmentId" IN (${Prisma.join(scoped.map((department) => department.id))})
+       AND d."isOrphan" = false
+     ORDER BY "rank" ASC, d."title" ASC
      LIMIT ${limit}
   `;
 
@@ -111,8 +129,8 @@ export async function searchDocuments(
     description: row.description,
     departmentSlug: row.departmentSlug,
     departmentName: row.departmentName,
-    // O `ts_headline` monta HTML em cima de texto que veio do usuário: mesmo
-    // sendo só `<mark>` o que o Postgres acrescenta, o resultado passa pelo
+    // O `highlight` monta HTML em cima de texto que veio do usuário: mesmo
+    // sendo só `<mark>` o que o FTS5 acrescenta, o resultado passa pelo
     // sanitizador antes de virar dangerouslySetInnerHTML, como todo o resto.
     snippetHtml: sanitizeDocumentHtml(row.snippetHtml ?? ""),
     rank: Number(row.rank),

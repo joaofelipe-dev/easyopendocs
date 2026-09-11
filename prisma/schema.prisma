@@ -8,7 +8,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 // ---------------------------------------------------------------------------
@@ -128,16 +128,12 @@ model Document {
   fileSize     Int      @default(0)
   isOrphan     Boolean  @default(false)
   /// Texto puro do corpo já sanitizado, extraído no sync. Existe para
-  /// alimentar a busca e para o `ts_headline` ter de onde tirar o trecho.
+  /// alimentar a busca e para o `highlight()` do FTS5 ter de onde tirar o
+  /// trecho.
   plainText    String   @default("")
-  /// tsvector com pesos (título A, descrição B, corpo C). Coluna comum, não
-  /// gerada: `GENERATED ALWAYS AS` exigiria expressão IMMUTABLE e não é
-  /// representável aqui, então viraria drift a cada `migrate dev`. Quem
-  /// preenche é o sync, por SQL cru — ver src/lib/search.ts.
-  searchVector Unsupported("tsvector")?
-  /// Versão do indexador que gerou o vetor acima. Quando não bate com
-  /// SEARCH_INDEX_VERSION, o sync reprocessa o arquivo mesmo que o mtime e o
-  /// hash não tenham mudado — é o que faz o backfill acontecer sozinho.
+  /// Versão do indexador (conteúdo da tabela `DocumentFts`). Quando não bate
+  /// com SEARCH_INDEX_VERSION, o sync reprocessa o arquivo mesmo que o mtime e
+  /// o hash não tenham mudado — é o que faz o backfill acontecer sozinho.
   searchVersion Int     @default(0)
   /// Dias entre revisões, do front-matter `reviewEvery`. O arquivo continua
   /// sendo a fonte: estes dois campos são índice, preenchidos pelo sync.
@@ -154,25 +150,14 @@ model Document {
 
   @@unique([departmentId, slug])
   @@index([departmentId, isOrphan])
-  @@index([searchVector], type: Gin)
 }
 
 /// De onde veio a versão. `FILESYSTEM` é o padrão quando o sync acha conteúdo
 /// novo sem que nenhuma tela do portal tenha pedido — git, FTP, `cp` no
 /// servidor. Distinguir isso é metade do motivo de o histórico existir.
-enum DocumentVersionSource {
-  UI_CREATE
-  UI_EDIT
-  FILESYSTEM
-  RESTORE
-}
-
-/// Snapshot do arquivo a cada mudança de conteúdo detectada pelo sync.
 ///
-/// Guarda o arquivo INTEIRO, front-matter incluído: é o que permite restaurar
-/// byte a byte, sem remontar o cabeçalho e torcer para dar igual. Fica no
-/// Postgres, não no disco, porque é histórico derivado — o filesystem continua
-/// sendo a fonte de verdade do conteúdo ATUAL, e só dele.
+/// SQLite não tem enum no Prisma: o valor vira String e os literais são
+/// garantidos pelos pontos de uso (sync/actions), que só gravam estas chaves.
 model DocumentVersion {
   id          String   @id @default(cuid())
   documentId  String
@@ -185,7 +170,7 @@ model DocumentVersion {
   rawHtml     String
   contentHash String
   byteSize    Int      @default(0)
-  source      DocumentVersionSource @default(FILESYSTEM)
+  source      String   @default("FILESYSTEM")
   authorId    String?
   createdAt   DateTime @default(now())
 
@@ -201,16 +186,13 @@ model DocumentVersion {
 // Observabilidade do sync
 // ---------------------------------------------------------------------------
 
-enum SyncTrigger {
-  MANUAL
-  AUTOMATIC
-  SEED
-  DOCUMENT_CREATE
-}
+// ---------------------------------------------------------------------------
+// Observabilidade do sync
+// ---------------------------------------------------------------------------
 
 model SyncLog {
   id          String      @id @default(cuid())
-  trigger     SyncTrigger @default(AUTOMATIC)
+  trigger     String      @default("AUTOMATIC")
   startedAt   DateTime    @default(now())
   finishedAt  DateTime?
   durationMs  Int         @default(0)

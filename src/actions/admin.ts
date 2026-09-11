@@ -116,7 +116,6 @@ export async function createUserAction(
             departmentId,
             roleId: defaultRoleId,
           })),
-          skipDuplicates: true,
         });
       }
     });
@@ -238,7 +237,6 @@ export async function bulkCreateUsersAction(
             departmentId,
             roleId: defaultRoleId,
           })),
-          skipDuplicates: true,
         });
       });
       created += 1;

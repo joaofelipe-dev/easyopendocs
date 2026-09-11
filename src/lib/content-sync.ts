@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { prisma } from "@/lib/prisma";
-import type { SyncTrigger } from "@/generated/prisma/enums";
 import {
   DEPARTMENT_META_FILE,
   contentRoot,
@@ -219,6 +218,12 @@ async function scanDepartmentDocuments(
 // ---------------------------------------------------------------------------
 // Sincronização
 // ---------------------------------------------------------------------------
+
+/**
+ * Quem pediu a varredura. SQLite não tem enum no Prisma — o valor vira String
+ * e estes literais são o contrato (idêntico ao enum SyncTrigger que havia).
+ */
+export type SyncTrigger = "MANUAL" | "AUTOMATIC" | "SEED" | "DOCUMENT_CREATE";
 
 export type SyncOptions = {
   trigger?: SyncTrigger;
