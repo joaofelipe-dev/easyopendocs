@@ -408,3 +408,36 @@
     break-inside: avoid;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Movimento.
+ *
+ * FR-015: quem prefere reduzir movimento cancela toda animação/transição —
+ * inclusive as do tw-animate-css (dialog, dropdown, sheet) e a de tema.
+ * FR-014: a classe .theme-transition é aplicada temporariamente pelo
+ * ThemeToggle durante ~300ms após alternar o tema, transicionando apenas as
+ * propriedades de cor/relevo (nunca em caráter permanente).
+ * ------------------------------------------------------------------------- */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition:
+    background-color 300ms,
+    color 300ms,
+    border-color 300ms,
+    fill 300ms,
+    stroke 300ms,
+    box-shadow 300ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

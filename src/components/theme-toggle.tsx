@@ -12,10 +12,38 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
+const THEME_TRANSITION_MS = 300;
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
+  const themeTimer = React.useRef<number | null>(null);
+
+  // Toggles rápidos em sequência não podem cortar a transição anterior.
+  React.useEffect(() => {
+    return () => {
+      if (themeTimer.current !== null) window.clearTimeout(themeTimer.current);
+    };
+  }, []);
 
   const toggleTheme = React.useCallback(() => {
+    // Transição suave de cores na troca do tema (FR-014). A classe é
+    // temporária: transições permanentes globais custariam caro em jank.
+    if (!prefersReducedMotion()) {
+      const root = document.documentElement;
+      root.classList.add("theme-transition");
+      if (themeTimer.current !== null) window.clearTimeout(themeTimer.current);
+      themeTimer.current = window.setTimeout(
+        () => root.classList.remove("theme-transition"),
+        THEME_TRANSITION_MS,
+      );
+    }
     setTheme(resolvedTheme === "dark" ? "light" : "dark");
   }, [resolvedTheme, setTheme]);
 
