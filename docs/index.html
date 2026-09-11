@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>easyopendocs — Preview do redesign</title>
+<style>
+  /* =========================================================================
+   * Tokens reais de src/app/globals.css (feature 001 — redesign neumórfico).
+   * Preview estático: reprodução fiel das variáveis e do comportamento visual,
+   * sem backend. Não é o runtime do portal.
+   * ========================================================================= */
+  :root {
+    --background: oklch(0.965 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: var(--background);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: var(--background);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: var(--background);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.945 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.945 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --radius: 0.625rem;
+
+    /* Neumorfismo: dupla sombra (luz cima-esquerda, sombra baixo-direita), blur ~2x offset. */
+    --neu-shadow-raised: 4px 4px 8px oklch(0.85 0 0), -4px -4px 8px oklch(1 0 0);
+    --neu-shadow-inset: inset 3px 3px 6px oklch(0.85 0 0), inset -3px -3px 6px oklch(1 0 0);
+    --neu-shadow-pop: 5px 5px 10px oklch(0.82 0 0), -5px -5px 10px oklch(1 0 0);
+    --neu-edge: oklch(0.9 0 0);
+  }
+
+  .dark {
+    --background: oklch(0.21 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: var(--background);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: var(--background);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: var(--background);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.26 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.26 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+
+    /* Neumorfismo no escuro: retune dos dois tons (highlight cinza, nunca branco; shade cinza, nunca preto). */
+    --neu-shadow-raised: 4px 4px 8px oklch(0.16 0 0), -4px -4px 8px oklch(0.27 0 0);
+    --neu-shadow-inset: inset 3px 3px 6px oklch(0.16 0 0), inset -3px -3px 6px oklch(0.27 0 0);
+    --neu-shadow-pop: 5px 5px 10px oklch(0.14 0 0), -5px -5px 10px oklch(0.28 0 0);
+    --neu-edge: oklch(1 0 0 / 14%);
+  }
+
+  /* FR-015: quem prefere reduzir movimento cancela toda animação/transição. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* FR-014: .theme-transition é aplicada temporariamente pelo toggle (~300ms). */
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition:
+      background-color 300ms,
+      color 300ms,
+      border-color 300ms,
+      fill 300ms,
+      stroke 300ms,
+      box-shadow 300ms !important;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell { min-height: 100vh; }
+
+  /* ---- AppHeader ---- */
+  .app-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: color-mix(in oklab, var(--background) 75%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 56px;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; color: inherit; }
+  .brand-mark {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: var(--primary); color: var(--primary-foreground);
+    display: grid; place-items: center;
+  }
+  .header-spacer { flex: 1; display: flex; justify-content: center; }
+
+  /* ---- Busca (campo sempre rebaixado — FR-002) ---- */
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; max-width: 320px; height: 36px;
+    border-radius: 8px; border: 1px solid var(--neu-edge);
+    background: var(--card); color: var(--muted-foreground);
+    box-shadow: var(--neu-shadow-inset);
+    padding: 0 12px;
+  }
+  .search input {
+    flex: 1; min-width: 0; border: 0; background: transparent; outline: none;
+    color: var(--foreground); font: inherit; font-size: 0.875rem;
+  }
+
+  /* ---- Botões ---- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 32px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid transparent; background: transparent;
+    color: var(--foreground); font: inherit; font-size: 0.875rem; font-weight: 500;
+    white-space: nowrap; cursor: pointer; text-decoration: none;
+    box-shadow: var(--neu-shadow-raised);
+    transition: box-shadow 200ms, background-color 200ms, color 200ms, border-color 200ms, transform 200ms;
+  }
+  .btn:active { box-shadow: var(--neu-shadow-inset); transform: translateY(1px); }
+  .btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .btn-lg { height: 36px; }
+  .btn-icon { width: 32px; height: 32px; padding: 0; border-radius: 9999px; }
+  .btn-block { width: 100%; }
+  .btn-default { background: var(--primary); color: var(--primary-foreground); }
+  .btn-default:hover { background: color-mix(in oklab, var(--primary) 80%, transparent); }
+  .btn-secondary { background: var(--secondary); color: var(--secondary-foreground); }
+  .btn-secondary:hover { background: var(--muted); }
+  .btn-outline { background: var(--card); border-color: var(--border); }
+  .btn-outline:hover { background: var(--muted); }
+  .btn-ghost { box-shadow: none; }
+  .btn-ghost:hover { background: var(--muted); box-shadow: var(--neu-shadow-inset); }
+  .btn-destructive { background: color-mix(in oklab, var(--destructive) 10%, transparent); color: var(--destructive); box-shadow: none; }
+  .btn-destructive:hover { background: color-mix(in oklab, var(--destructive) 20%, transparent); }
+  .btn svg { pointer-events: none; }
+
+  /* ---- Card / Tiles ---- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--neu-edge);
+    border-radius: calc(var(--radius) * 1.4);
+    box-shadow: var(--neu-shadow-raised);
+  }
+  .card-head { padding: 20px 24px 0; }
+  .card-body { padding: 20px 24px; }
+  .card-title { margin: 0; font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; }
+  .card-desc { margin: 4px 0 0; color: var(--muted-foreground); font-size: 0.875rem; }
+
+  .tile {
+    display: flex; flex-direction: column; gap: 12px;
+    padding: 16px; text-decoration: none; color: inherit;
+    background: var(--card);
+    border: 1px solid var(--neu-edge);
+    border-radius: 14px;
+    box-shadow: var(--neu-shadow-raised);
+    transition: box-shadow 200ms, border-color 200ms, transform 200ms;
+  }
+  .tile:hover { box-shadow: var(--neu-shadow-pop); transform: translateY(-2px); }
+  .tile:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .tile-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: var(--muted); color: var(--muted-foreground);
+    display: grid; place-items: center;
+  }
+  .tile h3 { margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
+  .tile p { margin: 2px 0 0; color: var(--muted-foreground); font-size: 0.875rem; }
+
+  /* ---- Badges (profundidade é reforço; cor comunica — FR-008/009) ---- */
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 20px; padding: 0 8px; border-radius: 9999px;
+    font-size: 0.75rem; font-weight: 500; white-space: nowrap;
+  }
+  .badge-secondary { background: var(--secondary); color: var(--secondary-foreground); box-shadow: var(--neu-shadow-raised); }
+  .badge-outline { border: 1px solid var(--border); color: var(--foreground); }
+  .badge-ok { background: color-mix(in oklab, oklch(0.62 0.16 160) 18%, var(--card)); color: oklch(0.44 0.11 162); }
+  .badge-warn { background: color-mix(in oklab, oklch(0.72 0.14 85) 20%, var(--card)); color: oklch(0.55 0.12 80); }
+  .badge-danger { background: color-mix(in oklab, var(--destructive) 12%, var(--card)); color: var(--destructive); }
+  .dark .badge-ok { color: oklch(0.75 0.12 160); }
+  .dark .badge-warn { color: oklch(0.8 0.11 85); }
+
+  /* ---- Formulários ---- */
+  .field {
+    width: 100%; height: 36px;
+    border-radius: 8px; border: 1px solid var(--neu-edge);
+    background: var(--card); color: var(--foreground);
+    box-shadow: var(--neu-shadow-inset);
+    padding: 0 12px; font: inherit; font-size: 0.875rem;
+  }
+  .field:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-color: var(--ring); }
+  .label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 6px; }
+  .form-row { margin-bottom: 16px; }
+
+  .check {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.875rem; cursor: pointer; color: var(--foreground); width: fit-content;
+  }
+  .check-box {
+    position: relative;
+    width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
+    border: 1px solid var(--neu-edge);
+    background: var(--card);
+    box-shadow: var(--neu-shadow-raised);
+    display: grid; place-items: center;
+    color: var(--primary-foreground);
+    transition: box-shadow 200ms, background-color 200ms, border-color 200ms;
+  }
+  .check input { position: absolute; opacity: 0; pointer-events: none; }
+  .check:active .check-box { box-shadow: var(--neu-shadow-inset); }
+  .check input:checked + .check-box { background: var(--primary); border-color: var(--primary); box-shadow: none; }
+  .check input:focus-visible + .check-box { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .check-box svg { display: none; }
+  .check input:checked + .check-box svg { display: block; }
+
+  .switch {
+    display: flex; align-items: center; gap: 8px; cursor: pointer; width: fit-content;
+    font-size: 0.875rem; color: var(--foreground);
+  }
+  .switch-track {
+    position: relative;
+    width: 32px; height: 18.4px; border-radius: 9999px;
+    background: var(--input); border: 1px solid transparent;
+    box-shadow: var(--neu-shadow-raised);
+    transition: box-shadow 200ms, background-color 200ms;
+  }
+  .switch:active .switch-track { box-shadow: var(--neu-shadow-inset); }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch input:checked + .switch-track { background: var(--primary); }
+  .switch input:checked + .switch-track::after { transform: translateX(calc(100% - 2px)); }
+  .switch input:focus-visible + .switch-track { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .switch-track::after {
+    content: "";
+    position: absolute; top: 2px; left: 3px;
+    width: 12.4px; height: 12.4px; border-radius: 9999px;
+    background: var(--background);
+    transition: transform 200ms;
+  }
+  .dark .switch-track::after { background: var(--foreground); }
+  .dark .switch input:checked + .switch-track::after { background: var(--primary-foreground); }
+
+  .select {
+    width: 100%; height: 36px; border-radius: 8px;
+    border: 1px solid var(--neu-edge); background: var(--card); color: var(--foreground);
+    box-shadow: var(--neu-shadow-inset); padding: 0 12px; font: inherit; font-size: 0.875rem;
+  }
+  .select:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .textarea {
+    width: 100%; border-radius: 8px; border: 1px solid var(--neu-edge);
+    background: var(--card); color: var(--foreground);
+    box-shadow: var(--neu-shadow-inset); padding: 10px 12px;
+    font: inherit; font-size: 0.875rem; resize: vertical; min-height: 72px;
+  }
+  .textarea:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+  /* ---- Tabs ---- */
+  .tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 10px; }
+  .tab {
+    padding: 0 12px; height: 30px; border-radius: 8px; border: 0;
+    background: transparent; color: var(--muted-foreground);
+    font: inherit; font-size: 0.875rem; font-weight: 500; cursor: pointer;
+    transition: box-shadow 200ms, background-color 200ms, color 200ms;
+  }
+  .tab:hover { color: var(--foreground); }
+  .tab[aria-selected="true"] { background: var(--muted); color: var(--foreground); box-shadow: var(--neu-shadow-inset); }
+  .tab:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+  /* ---- Layout de telas ---- */
+  .preview-note {
+    background: color-mix(in oklab, var(--primary) 8%, var(--background));
+    border-bottom: 1px solid var(--border);
+    color: var(--muted-foreground);
+    font-size: 0.8rem; text-align: center; padding: 6px 16px;
+  }
+  .section { max-width: 72rem; margin: 0 auto; padding: 40px 24px 0; }
+  .grid-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .h-title { margin: 0; font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; }
+  .h-sub { margin: 4px 0 0; color: var(--muted-foreground); font-size: 0.875rem; }
+  .gallery { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); padding-bottom: 48px; }
+  .stack { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .stack-col { display: flex; flex-direction: column; gap: 16px; }
+  .foot { color: var(--muted-foreground); font-size: 0.8rem; text-align: center; padding: 8px 24px 40px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- AppHeader (espelho de app-header.tsx) -->
+  <header class="app-header">
+    <div class="header-inner">
+      <a class="brand" href="#">
+        <span class="brand-mark">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/><path d="M7 7h6"/><path d="M7 11h10"/></svg>
+        </span>
+        <span>Portal de Documentações</span>
+      </a>
+
+      <div class="header-spacer">
+        <div class="search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" placeholder="Buscar..." aria-label="Buscar" />
+        </div>
+      </div>
+
+      <span class="btn btn-ghost">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+        <span>Administração</span>
+      </span>
+
+      <button class="btn btn-ghost btn-icon" id="themeToggle" aria-label="Alternar tema">
+        <!-- sol -->
+        <svg id="iconSun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg>
+        <!-- lua -->
+        <svg id="iconMoon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      </button>
+
+      <button class="btn btn-ghost" style="border-radius:9999px;width:32px;padding:0">
+        <span style="width:32px;height:32px;border-radius:9999px;background:var(--muted);display:grid;place-items:center;font-size:0.75rem;font-weight:600">JF</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="preview-note">
+    Preview estático do redesign neumórfico — dados fictícios, sem backend. O portal real é autenticado e serve do servidor.
+  </div>
+
+  <!-- Login (espelho de (auth)/login/page.tsx) -->
+  <main class="section" style="padding-top:48px">
+    <div style="max-width:24rem;margin:0 auto">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;margin-bottom:24px">
+        <span style="width:44px;height:44px;border-radius:12px;background:var(--primary);color:var(--primary-foreground);display:grid;place-items:center">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/><path d="M7 7h6"/><path d="M7 11h10"/></svg>
+        </span>
+        <div>
+          <h1 class="h-title" style="font-size:1.25rem">Portal de Documentações</h1>
+          <p class="h-sub">Acesso restrito a colaboradores</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Entrar</h2>
+          <p class="card-desc">Use suas credenciais corporativas para continuar.</p>
+        </div>
+        <div class="card-body">
+          <div class="form-row">
+            <label class="label" for="login-email">E-mail</label>
+            <input class="field" id="login-email" type="email" value="joao@exemplo.com" autocomplete="off" />
+          </div>
+          <div class="form-row">
+            <label class="label" for="login-senha">Senha</label>
+            <input class="field" id="login-senha" type="password" value="••••••••" autocomplete="off" />
+          </div>
+          <div class="form-row" style="display:flex;align-items:center;justify-content:space-between">
+            <label class="check">
+              <input type="checkbox" checked />
+              <span class="check-box">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+              </span>
+              Lembrar de mim
+            </label>
+            <a href="#" style="color:var(--muted-foreground);font-size:0.875rem">Esqueceu a senha?</a>
+          </div>
+          <button class="btn btn-default btn-lg btn-block">Entrar</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Home — Departamentos (espelho de (app)/page.tsx) -->
+  <main class="section">
+    <div style="margin-bottom:24px">
+      <h1 class="h-title">Departamentos</h1>
+      <p class="h-sub">Como administrador geral, você tem acesso a todos os departamentos.</p>
+    </div>
+
+    <div class="grid-tiles">
+      <a class="tile" href="#">
+        <div class="tile-top">
+          <span class="tile-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted-foreground)" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </div>
+        <div>
+          <h3>Engenharia</h3>
+          <p>Processos, sistemas e infraestrutura de desenvolvimento.</p>
+        </div>
+        <div class="stack">
+          <span class="badge badge-secondary">6 documentações</span>
+          <span class="badge badge-outline">Engenharia</span>
+          <span class="badge badge-outline">Admin geral</span>
+        </div>
+      </a>
+
+      <a class="tile" href="#">
+        <div class="tile-top">
+          <span class="tile-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted-foreground)" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </div>
+        <div>
+          <h3>Tecnologia da Informação</h3>
+          <p>Guias de suporte, rede, segurança e ferramentas.</p>
+        </div>
+        <div class="stack">
+          <span class="badge badge-secondary">4 documentações</span>
+          <span class="badge badge-outline">TI</span>
+          <span class="badge badge-ok">Em dia</span>
+        </div>
+      </a>
+
+      <a class="tile" href="#">
+        <div class="tile-top">
+          <span class="tile-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted-foreground)" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </div>
+        <div>
+          <h3>Recursos Humanos</h3>
+          <p>Políticas, onboarding, benefícios e cultura.</p>
+        </div>
+        <div class="stack">
+          <span class="badge badge-secondary">8 documentações</span>
+          <span class="badge badge-outline">RH</span>
+          <span class="badge badge-warn">Vence em 12 dias</span>
+        </div>
+      </a>
+
+      <a class="tile" href="#">
+        <div class="tile-top">
+          <span class="tile-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted-foreground)" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </div>
+        <div>
+          <h3>Jurídico</h3>
+          <p>Contratos, LGPD, compliance e riscos.</p>
+        </div>
+        <div class="stack">
+          <span class="badge badge-secondary">2 documentações</span>
+          <span class="badge badge-outline">Jurídico</span>
+          <span class="badge badge-danger">Vencida</span>
+        </div>
+      </a>
+
+      <a class="tile" href="#">
+        <div class="tile-top">
+          <span class="tile-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted-foreground)" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </div>
+        <div>
+          <h3>Marketing</h3>
+          <p>Campanhas, identidade, conteúdo e métricas.</p>
+        </div>
+        <div class="stack">
+          <span class="badge badge-secondary">3 documentações</span>
+          <span class="badge badge-outline">Marketing</span>
+          <span class="badge badge-ok">Em dia</span>
+        </div>
+      </a>
+
+      <a class="tile" href="#">
+        <div class="tile-top">
+          <span class="tile-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted-foreground)" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </div>
+        <div>
+          <h3>Financeiro</h3>
+          <p>Orçamento, despesas, notas e prestação de contas.</p>
+        </div>
+        <div class="stack">
+          <span class="badge badge-secondary">5 documentações</span>
+          <span class="badge badge-outline">Financeiro</span>
+          <span class="badge badge-ok">Em dia</span>
+        </div>
+      </a>
+    </div>
+  </main>
+
+  <!-- Galeria de componentes do redesign -->
+  <main class="section">
+    <div style="margin-bottom:24px">
+      <h1 class="h-title">Componentes</h1>
+      <p class="h-sub">Primitivos do redesign — profundidade sútil, foco visível por teclado, selos comunicados por cor.</p>
+    </div>
+
+    <div class="gallery">
+      <div class="card stack-col" style="padding:24px">
+        <h2 class="card-title">Botões</h2>
+        <div class="stack">
+          <button class="btn btn-default">Entrar</button>
+          <button class="btn btn-secondary">Revisar</button>
+          <button class="btn btn-outline">Editar</button>
+          <button class="btn btn-ghost">Configurações</button>
+          <button class="btn btn-destructive">Excluir</button>
+        </div>
+        <div class="stack" style="align-items:center">
+          <button class="btn btn-outline btn-icon" aria-label="Ação" style="border-radius:9999px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 7 7 17"/><path d="M8 7h9v9"/></svg>
+          </button>
+          <span style="font-size:0.875rem;color:var(--muted-foreground)">Pressão afunda o botão (raised → inset)</span>
+        </div>
+      </div>
+
+      <div class="card stack-col" style="padding:24px">
+        <h2 class="card-title">Formulário</h2>
+        <div>
+          <label class="label" for="gal-nome">Nome</label>
+          <input class="field" id="gal-nome" type="text" value="João Felipe" />
+        </div>
+        <div>
+          <label class="label" for="gal-busca">Busca</label>
+          <input class="field" id="gal-busca" type="text" placeholder="Digite para buscar..." />
+        </div>
+        <div>
+          <label class="label" for="gal-dep">Departamento</label>
+          <select class="select" id="gal-dep">
+            <option>Engenharia</option>
+            <option>Tecnologia da Informação</option>
+            <option selected>Recursos Humanos</option>
+          </select>
+        </div>
+        <div>
+          <label class="label" for="gal-desc">Descrição</label>
+          <textarea class="textarea" id="gal-desc" placeholder="Descreva o documento..."></textarea>
+        </div>
+      </div>
+
+      <div class="card stack-col" style="padding:24px">
+        <h2 class="card-title">Seleção</h2>
+        <label class="check">
+          <input type="checkbox" checked />
+          <span class="check-box">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+          </span>
+          Notificar por e-mail
+        </label>
+        <label class="switch">
+          <input type="checkbox" checked />
+          <span class="switch-track"></span>
+          Receber resumo semanal
+        </label>
+        <label class="switch">
+          <input type="checkbox" />
+          Notificações de revisão
+        </label>
+      </div>
+
+      <div class="card stack-col" style="padding:24px">
+        <h2 class="card-title">Abas</h2>
+        <div class="tabs" role="tablist" aria-label="Seções">
+          <button class="tab" role="tab" aria-selected="true">Documentos</button>
+          <button class="tab" role="tab" aria-selected="false">Responsabilidades</button>
+          <button class="tab" role="tab" aria-selected="false">Histórico</button>
+        </div>
+        <div class="stack">
+          <span class="badge badge-secondary">Em dia</span>
+          <span class="badge badge-outline">Engenharia</span>
+          <span class="badge badge-warn">Vence em 12 dias</span>
+          <span class="badge badge-danger">Vencida</span>
+          <span class="badge badge-outline">Admin geral</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="foot">
+    easyopendocs — preview visual gerado a partir de <code>src/app/globals.css</code>, commit style: redesign neumórfico.
+  </footer>
+</div>
+
+<script>
+  // Espelha theme-toggle.tsx: classe .theme-transition temporária (~300ms),
+  // respeitando prefers-reduced-motion (FR-014 / FR-015).
+  const THEME_TRANSITION_MS = 300;
+  const root = document.documentElement;
+  const toggleBtn = document.getElementById("themeToggle");
+  const iconSun = document.getElementById("iconSun");
+  const iconMoon = document.getElementById("iconMoon");
+  let themeTimer = null;
+
+  function prefersReducedMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function applyTheme(theme, animate) {
+    if (animate && !prefersReducedMotion()) {
+      root.classList.add("theme-transition");
+      if (themeTimer !== null) window.clearTimeout(themeTimer);
+      themeTimer = window.setTimeout(
+        () => root.classList.remove("theme-transition"),
+        THEME_TRANSITION_MS,
+      );
+    }
+    root.classList.toggle("dark", theme === "dark");
+    iconSun.hidden = theme === "dark";
+    iconMoon.hidden = theme !== "dark";
+    try { localStorage.setItem("preview-theme", theme); } catch (_) {}
+  }
+
+  toggleBtn.addEventListener("click", () => {
+    const next = root.classList.contains("dark") ? "light" : "dark";
+    applyTheme(next, true);
+  });
+
+  // Tema inicial: preferência salva, senão claro. Sem transição no load inicial.
+  let initial;
+  try { initial = localStorage.getItem("preview-theme"); } catch (_) {}
+  applyTheme(initial === "dark" ? "dark" : "light", false);
+
+  // Abas (marcação estática — apenas comportamento de exibição).
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", "false"));
+      tab.setAttribute("aria-selected", "true");
+    });
+  });
+</script>
+</body>
+</html>
