@@ -452,7 +452,7 @@ function DepartmentRoleFields({
           name="defaultRoleId"
           required
           defaultValue={defaultRole?.id ?? ""}
-          className="border-input bg-transparent dark:bg-input/30 h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs"
+          className="border-neu-edge bg-transparent shadow-neu-inset dark:bg-input/30 h-9 w-full rounded-md border px-3 py-1 text-sm"
         >
           <option value="" disabled>
             Selecione…
@@ -738,7 +738,7 @@ function AccessDialog({
                 id={`department-${user.id}`}
                 name="departmentId"
                 required
-                className="border-input bg-transparent dark:bg-input/30 h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs"
+                className="border-neu-edge bg-transparent shadow-neu-inset dark:bg-input/30 h-9 w-full rounded-md border px-3 py-1 text-sm"
               >
                 <option value="">Selecione…</option>
                 {departments.map((department) => (
@@ -755,7 +755,7 @@ function AccessDialog({
                 id={`role-${user.id}`}
                 name="roleId"
                 required
-                className="border-input bg-transparent dark:bg-input/30 h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs"
+                className="border-neu-edge bg-transparent shadow-neu-inset dark:bg-input/30 h-9 w-full rounded-md border px-3 py-1 text-sm"
               >
                 <option value="">Selecione…</option>
                 {roles.map((role) => (

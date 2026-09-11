@@ -37,7 +37,7 @@ export default async function HomePage() {
               href={`/departamentos/${department.slug}`}
               className="focus-visible:ring-ring rounded-xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
-              <Card className="hover:border-foreground/20 h-full transition-colors">
+              <Card className="hover:border-neu-edge h-full transition-[box-shadow,border-color,transform] duration-200 hover:-translate-y-0.5 hover:shadow-neu-pop">
                 <CardHeader>
                   <div className="flex items-start justify-between gap-3">
                     <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-lg">
