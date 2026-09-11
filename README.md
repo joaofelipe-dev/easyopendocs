@@ -8,9 +8,10 @@ Autohospedado, sem dependência de serviço externo.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A ideia central: **o filesystem é a fonte de verdade do conteúdo**. Cada
-departamento é uma pasta, cada documentação é um arquivo `.html`. O Postgres é
-um índice desses arquivos — é o que permite listar, permissionar e auditar sem
-varrer disco a cada request.
+departamento é uma pasta, cada documentação é um arquivo `.html`. O SQLite é um
+índice desses arquivos — é o que permite listar, permissionar e auditar sem
+varrer disco a cada request. O arquivo do banco é gerado no bootstrap e não é
+versionado.
 
 ```
 content/departamentos/
@@ -36,8 +37,8 @@ Sem rebuild, sem cadastro manual.
 | ------------- | ---------------------------------------------------- |
 | Framework     | Next.js 16 (App Router, React 19, TypeScript estrito) |
 | UI            | TailwindCSS v4 + shadcn/ui                            |
-| Banco         | PostgreSQL 17 (via Docker Compose em dev, ou instância nativa em produção) |
-| ORM           | Prisma 7 (driver adapter `@prisma/adapter-pg`)        |
+| Banco         | SQLite (arquivo único; busca full-text por FTS5 embutido) |
+| ORM           | Prisma 7 (driver adapter `@prisma/adapter-better-sqlite3`) |
 | Autenticação  | NextAuth v5 (Auth.js), Credentials Provider + JWT     |
 | Sanitização   | isomorphic-dompurify                                  |
 
@@ -45,40 +46,24 @@ Sem rebuild, sem cadastro manual.
 
 ## Como subir
 
-Pré-requisitos: **Node.js 22.19+** e um **PostgreSQL 17** acessível (via Docker em
-dev, ou uma instância nativa — em produção, por exemplo).
+Pré-requisitos: **Node.js 22.19+** e nada mais — o banco é um arquivo SQLite
+que o `migrate` cria sozinho.
 
 ```bash
 cp .env.example .env
 # gere um segredo e cole em NEXTAUTH_SECRET:
 openssl rand -base64 32
 
-docker compose up -d --wait   # Postgres na porta 5433 do host
 npm install                   # roda `prisma generate` no postinstall
-npm run db:migrate            # aplica as migrations
+npm run db:migrate            # cria data/easyopendocs.db e aplica as migrations
 npm run db:seed               # popula departamentos, papéis e usuários
 npm run dev                   # http://localhost:3000
 ```
 
-> **Sobre a porta:** o container expõe o Postgres na **5433** do host, não na
-> 5432, para não conflitar com um Postgres instalado direto na máquina. Se
-> mudar isso no `docker-compose.yml`, ajuste também a `DATABASE_URL`.
-
-> **Docker sem sudo:** se `docker ps` der `permission denied`, rode
-> `sudo usermod -aG docker $USER` e faça logout/login.
-
-### Sem Docker (Postgres nativo)
-
-O `docker-compose.yml` é só uma conveniência de desenvolvimento — a aplicação
-não depende do Docker em nada. Para usar um Postgres já instalado na máquina
-(local ou em outro servidor da rede), pule o `docker compose up` e aponte
-`DATABASE_URL` direto para ele:
-
-```bash
-DATABASE_URL="postgresql://usuario:senha@host:5432/easyopendocs?schema=public"
-```
-
-Crie o banco (`CREATE DATABASE easyopendocs;`) antes de rodar as migrations.
+> **O que é `data/easyopendocs.db`:** é o banco inteiro — RBAC, metadados,
+> histórico e o índice de busca. Ele é (re)gerado pelo `db:migrate`/`db:deploy`
+> e pode ser apagado e reconstruído sem perder conteúdo (os arquivos de
+> `content/departamentos/` é que não podem sumir). Já é ignorado pelo git.
 
 ### Deploy em produção (rede local)
 
@@ -134,7 +119,6 @@ duas listas e criar tudo pela interface em `/admin`.
 | `npm run typecheck`  | `tsc --noEmit`                                     |
 | `npm run lint`       | ESLint                                             |
 | `npm test`           | Testes de integração (Vitest) — ver [`tests/README.md`](tests/README.md) |
-| `npm run db:up`      | Sobe o Postgres e espera ficar saudável            |
 | `npm run db:migrate` | `prisma migrate dev`                               |
 | `npm run db:seed`    | Roda o seed (idempotente)                          |
 | `npm run db:reset`   | **Apaga o banco** e reaplica migrations + seed     |
@@ -210,13 +194,11 @@ tem permissão de ler.
 /busca?q=backup&departamento=engenharia
 ```
 
-- **Acento é opcional.** "manutencao" encontra "manutenção": a configuração de
-  busca `pt_unaccent` (criada pela migration `add_document_search`) é a
-  `portuguese` do Postgres com o dicionário `unaccent` na frente do
-  radicalizador. A extensão `unaccent` é *trusted* desde o PG13, então a
-  migration a cria sem precisar de superuser.
-- **Aceita a sintaxe do `websearch_to_tsquery`:** `"frase exata"`, `-palavra`
-  para excluir, `or` entre termos.
+- **Acento é opcional.** "manutencao" encontra "manutenção" (e vice-versa): o
+  índice é a tabela virtual FTS5 do SQLite com o tokenizer
+  `unicode61 remove_diacritics 2`, que normaliza caixa e acento na indexação e
+  na consulta.
+- **Aceita frase exata:** `"teste de restore"` busca os termos naquela ordem.
 - **Ranking por peso:** acerto no título vale mais que na descrição, que vale
   mais que no corpo. Um documento chamado "Rotina de backup" fica acima de um
   que só cita backup de passagem.
@@ -226,15 +208,16 @@ tem permissão de ler.
 
 ### Como o índice é mantido
 
-O índice é uma coluna `tsvector` em `Document`, preenchida **pelo sync** — o
-mesmo que já lê o arquivo do disco. Só documento que mudou é reprocessado; o
-texto indexado é o que sobra depois do sanitizador, então conteúdo que não é
-exibido também não é encontrável.
+O índice é a tabela virtual `DocumentFts` (FTS5), espelhando título,
+descrição e o texto puro do corpo. É preenchida **pelo sync** — o mesmo que já
+lê o arquivo do disco. Só documento que mudou é reprocessado; o texto indexado é
+o que sobra depois do sanitizador, então conteúdo que não é exibido também não é
+encontrável.
 
 Não há passo manual de indexação, nem depois de atualizar um portal que já
 estava rodando: cada documento carrega a versão do indexador que o gerou
 (`searchVersion`), e o sync reprocessa sozinho o que ficou para trás. Trocar
-como o vetor é montado é uma questão de incrementar `SEARCH_INDEX_VERSION` em
+como o índice é montado é uma questão de incrementar `SEARCH_INDEX_VERSION` em
 [`src/lib/search-index.ts`](src/lib/search-index.ts) — a reindexação acontece no
 próximo sync, sem `?force=1`.
 
@@ -540,12 +523,12 @@ npm test          # roda uma vez
 npm run test:watch
 ```
 
-Testes de integração/funcionais (Vitest): batem num Postgres de teste real
-(`TEST_DATABASE_URL`, mesma instância do docker-compose, banco
-`easyopendocs_test`) e num `CONTENT_ROOT` temporário — nada de banco, disco ou
-sanitizador mockado. Cobrem RBAC, sanitização, o indexador filesystem→Postgres
-e uma server action completa fim a fim. Detalhes, o que fica de fora (E2E de
-navegador é uma fase futura) e como estender: [`tests/README.md`](tests/README.md).
+Testes de integração/funcionais (Vitest): batem num SQLite de teste real
+(`TEST_DATABASE_URL`, arquivo recriado a cada execução, sem serviços) e num
+`CONTENT_ROOT` temporário — nada de banco, disco ou sanitizador mockado. Cobrem
+RBAC, sanitização, o indexador filesystem→SQLite e uma server action completa
+fim a fim. Detalhes, o que fica de fora (E2E de navegador é uma fase futura) e
+como estender: [`tests/README.md`](tests/README.md).
 
 ---
 
@@ -554,10 +537,11 @@ navegador é uma fase futura) e como estender: [`tests/README.md`](tests/README.
 Há dois ativos com estado que precisam de backup — nenhum dos dois é
 reconstruível a partir do outro:
 
-1. **Banco Postgres** — usuários, senhas, papéis/permissões (RBAC), atribuições
-   usuário↔departamento, metadados de documento (autor, hash) e o **histórico
-   de versões**, que é o único lugar onde o conteúdo anterior de uma
-   documentação existe.
+1. **Banco** — o arquivo `data/easyopendocs.db` sob backup: usuários, senhas,
+   papéis/permissões (RBAC), atribuições usuário↔departamento, metadados de
+   documento (autor, hash) e o **histórico de versões**, que é o único lugar
+   onde o conteúdo anterior de uma documentação existe. Como é um arquivo
+   único, o backup é uma cópia do arquivo.
 2. **`content/departamentos/`** — o HTML de cada documentação e o
    `_responsabilidades.json` de cada departamento, a fonte de verdade do
    conteúdo.
@@ -572,17 +556,13 @@ via **Task Scheduler**, diariamente:
 
 | Script                     | O que faz                                                        |
 | -------------------------- | ------------------------------------------------------------------ |
-| `backup-db.ps1`            | `pg_dump -Fc` do banco + rotação (14 dias + 1 por mês por 12 meses) |
-| `backup-content.ps1`       | Zip de `content/departamentos/` + a mesma rotação                  |
+| `backup-content.ps1`       | Zip de `content/departamentos/` + rotação (14 dias + 1 por mês por 12 meses) |
 | `backup-offsite.ps1`       | Espelha os backups locais para um destino fora do servidor (robocopy) |
 
-Rode os três em sequência, no mesmo agendamento (ex.: 2h da manhã). Os
-parâmetros (caminho do `pg_dump.exe`, credenciais, diretórios de destino)
-são passados via flags do PowerShell — veja o cabeçalho de cada script.
-
-**Credenciais do Postgres:** não passe a senha na linha de comando. Configure
-`%APPDATA%\postgresql\pgpass.conf` no usuário que roda a task, no formato
-`host:porta:database:usuario:senha`.
+O banco vai junto pelo `backup-offsite.ps1`: basta apontar `-LocalBackupRoot`
+para uma pasta que também contenha o `data/` (ou mesclar o arquivo `.db` na
+pasta do zip de conteúdo). Rode os scripts em sequência, no mesmo agendamento
+(ex.: 2h da manhã).
 
 **`.env` de produção:** guarde uma cópia separada (fora do Git, num cofre de
 senhas ou pasta protegida) para conseguir reconstruir o servidor do zero. Não
@@ -590,15 +570,9 @@ precisa de rotina automática — só de não estar em lugar nenhum além do
 servidor.
 
 **Teste de restore:** um backup nunca testado é só uma esperança. Pelo menos
-uma vez após configurar (e depois periodicamente):
-
-```powershell
-pg_restore -d easyopendocs_test easyopendocs_2026-01-01_0200.dump
-```
-
-e suba o app apontando `DATABASE_URL` pro banco de teste e `CONTENT_ROOT` pra
-uma cópia extraída do zip de conteúdo, confirmando que o portal carrega
-normalmente.
+uma vez após configurar (e depois periodicamente): copie o arquivo `.db` e uma
+extração do zip de conteúdo para um diretório de teste, aponte `DATABASE_URL`
+e `CONTENT_ROOT` para as cópias e confirme que o portal carrega normalmente.
 
 ---
 
@@ -609,9 +583,9 @@ todo push/PR para `main`, em dois jobs paralelos:
 
 - **build** — `typecheck`, `lint` e `build`, para pegar erro de tipo ou import
   antes de qualquer deploy;
-- **test** — a suíte do Vitest contra um Postgres real subido como service
-  container do próprio runner (ver [`tests/README.md`](tests/README.md) para o
-  porquê de não mockar banco nem disco).
+- **test** — a suíte do Vitest contra um SQLite real criado pelo próprio runner
+  (ver [`tests/README.md`](tests/README.md) para o porquê de não mockar banco
+  nem disco).
 
 ### Sobre deploy
 
@@ -635,8 +609,8 @@ deploy por botão sem expor o servidor.
 
 | Variável             | Obrigatória | Descrição                                                    |
 | -------------------- | ----------- | ------------------------------------------------------------ |
-| `DATABASE_URL`       | sim         | Conexão do Postgres                                          |
-| `TEST_DATABASE_URL`  | só p/ testes | Conexão do banco de teste (`npm test`) — [`tests/README.md`](tests/README.md) |
+| `DATABASE_URL`       | sim         | `file:./data/easyopendocs.db` (SQLite, relativo à raiz do projeto) |
+| `TEST_DATABASE_URL`  | só p/ testes | Arquivo SQLite do `npm test` — [`tests/README.md`](tests/README.md) |
 | `NEXTAUTH_SECRET`    | sim         | Segredo de assinatura dos JWTs                               |
 | `NEXTAUTH_URL`       | sim         | URL base da aplicação                                        |
 | `CONTENT_ROOT`       | não         | Raiz das documentações (padrão `content/departamentos`)       |
@@ -654,7 +628,7 @@ deploy por botão sem expor o servidor.
 
 ```
 easyopendocs/
-├── docker-compose.yml
+├── data/                        # SQLite (gitignored) — criado pelo migrate
 ├── prisma/
 │   ├── schema.prisma
 │   ├── migrations/
@@ -684,7 +658,7 @@ easyopendocs/
     │   ├── rbac.ts               # autorização server-side
     │   ├── permissions.ts        # catálogo compartilhado com o seed
     │   ├── content.ts            # slugs, caminhos, front-matter, template
-    │   ├── content-sync.ts       # indexador filesystem -> Postgres
+    │   ├── content-sync.ts       # indexador filesystem -> SQLite
     │   ├── search.ts             # consulta da busca (respeita o RBAC)
     │   ├── search-index.ts       # escrita do índice — quem chama é o sync
     │   ├── document-version.ts   # histórico: snapshot, retenção, autoria
@@ -712,9 +686,10 @@ tests/
 
 ## Notas de implementação
 
-- **Prisma 7** exige driver adapter (`@prisma/adapter-pg`) e a connection string
-  vive em `prisma.config.ts`, não no `schema.prisma`. O client é gerado em
-  `src/generated/prisma/` e não é versionado — `npm install` regenera.
+- **Prisma 7** exige driver adapter (`@prisma/adapter-better-sqlite3`) e a
+  connection string vive em `prisma.config.ts`, não no `schema.prisma`. O
+  client é gerado em `src/generated/prisma/` e não é versionado — `npm install`
+  regenera.
 - **Next 16** renomeou `middleware.ts` para `proxy.ts`, e `params`/`searchParams`
   são `Promise`.
 - **Node 22.19+** não é preferência, é requisito: o `isomorphic-dompurify`
@@ -748,8 +723,8 @@ npm test
 O `build` vem primeiro porque o `tsconfig.json` inclui `.next/types/**`, onde o
 Next gera os tipos `PageProps`/`LayoutProps` que as páginas usam: em checkout
 limpo esses arquivos ainda não existem e o `tsc --noEmit` falha com `TS2304`.
-Os testes precisam de um Postgres acessível em `TEST_DATABASE_URL` —
-`npm run db:up` sobe um.
+Os testes recriam o próprio banco SQLite a partir de `TEST_DATABASE_URL` — não
+é preciso subir serviço nenhum antes.
 
 O resto — estilo, escopo de PR, convenção de commit — está em
 [CONTRIBUTING.md](CONTRIBUTING.md).
