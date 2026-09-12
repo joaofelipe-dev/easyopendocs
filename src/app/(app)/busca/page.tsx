@@ -128,7 +128,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/busca">) 
                             {result.description}
                           </p>
                         ) : null}
-                        {/* Só o <mark> do ts_headline sobrevive à sanitização. */}
+                        {/* Só o <mark> do highlight() do FTS5 sobrevive à sanitização. */}
                         <p
                           className="text-muted-foreground [&_mark]:bg-primary/20 [&_mark]:text-foreground text-sm [&_mark]:rounded [&_mark]:px-0.5"
                           dangerouslySetInnerHTML={{ __html: result.snippetHtml }}

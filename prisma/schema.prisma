@@ -186,10 +186,6 @@ model DocumentVersion {
 // Observabilidade do sync
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Observabilidade do sync
-// ---------------------------------------------------------------------------
-
 model SyncLog {
   id          String      @id @default(cuid())
   trigger     String      @default("AUTOMATIC")
