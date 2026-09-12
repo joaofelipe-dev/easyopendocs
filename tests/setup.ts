@@ -23,7 +23,7 @@ vi.mock("@/lib/auth", () => ({ auth: vi.fn().mockResolvedValue(null) }));
 /**
  * setupFile: roda uma vez por ARQUIVO de teste, antes dos imports desse
  * arquivo (é o que garante que nenhum teste escreve sem querer em
- * content/departamentos/ de verdade nem no Postgres de desenvolvimento).
+ * content/departamentos/ de verdade nem no banco de teste/desenvolvimento).
  *
  * As duas linhas abaixo têm que vir antes de qualquer import de módulo do
  * app: `src/lib/prisma.ts` e `src/lib/content.ts` leem essas variáveis uma
@@ -37,7 +37,7 @@ const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) {
   throw new Error(
     "TEST_DATABASE_URL não definida. Veja tests/README.md — normalmente é " +
-      "a mesma instância do docker-compose, banco `easyopendocs_test`.",
+      "a variável `file:./data/easyopendocs-test.db` do .env.example.",
   );
 }
 process.env.DATABASE_URL = testDatabaseUrl;

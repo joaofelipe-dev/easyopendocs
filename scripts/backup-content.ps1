@@ -3,10 +3,10 @@
   Backup do conteudo (content/departamentos) do easyopendocs, com rotacao.
 
 .DESCRIPTION
-  Compacta a pasta de conteudo num .zip datado e aplica a mesma politica de
-  retencao do backup-db.ps1 (janela diaria + 1 por mes). Rode este script
-  logo apos (ou antes) do backup-db.ps1, no mesmo agendamento, para manter
-  os dois num ponto no tempo proximo.
+  Compacta a pasta de conteudo num .zip datado e aplica a retencao
+  (janela diaria + 1 por mes). O banco SQLite (data/easyopendocs.db) e um
+  arquivo: copie-o junto (ou mescle em -BackupDir) para ter os dois ativos
+  num ponto no tempo proximo.
 
 .EXAMPLE
   .\backup-content.ps1 -ContentDir "C:\apps\easyopendocs\content\departamentos" `

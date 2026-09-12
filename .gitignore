@@ -45,3 +45,9 @@ next-env.d.ts
 
 # database dumps (pode conter dados sensíveis, ex. hashes de senha)
 *.dump
+
+# sqlite (arquivos binários locais — regenerados por migrate/seed)
+/data/*.db
+/data/*.db-journal
+/data/*.db-shm
+/data/*.db-wal

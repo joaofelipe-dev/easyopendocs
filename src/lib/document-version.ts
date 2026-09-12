@@ -1,5 +1,34 @@
 import { prisma } from "@/lib/prisma";
-import type { DocumentVersionSource } from "@/generated/prisma/enums";
+
+/**
+ * De onde veio a versão — o enum DocumentVersionSource que havia no Postgres,
+ * agora literais garantidos pelos pontos de uso. `FILESYSTEM` é o padrão e
+ * nasce toda versão gravada pelo sync.
+ */
+export type DocumentVersionSource =
+  | "UI_CREATE"
+  | "UI_EDIT"
+  | "FILESYSTEM"
+  | "RESTORE";
+
+const SOURCES: readonly DocumentVersionSource[] = [
+  "UI_CREATE",
+  "UI_EDIT",
+  "FILESYSTEM",
+  "RESTORE",
+];
+
+/**
+ * O Prisma lê o campo como string (SQLite não tem enum); transforma em um dos
+ * literais conhecidos ou estoura — um valor desconhecido no banco é dado
+ * corrompido, melhor falhar alto do que rotular.
+ */
+function toDocumentVersionSource(value: string): DocumentVersionSource {
+  if ((SOURCES as readonly string[]).includes(value)) {
+    return value as DocumentVersionSource;
+  }
+  throw new Error(`Origem de versão desconhecida no banco: "${value}"`);
+}
 
 /**
  * Histórico de versões das documentações.
@@ -168,7 +197,7 @@ export async function listDocumentVersions(
       description: row.description,
       contentHash: row.contentHash,
       byteSize: row.byteSize,
-      source: row.source,
+      source: toDocumentVersionSource(row.source),
       authorName: row.author?.name ?? null,
       createdAt: row.createdAt,
       byteDelta: previous ? row.byteSize - previous.byteSize : null,
@@ -206,7 +235,11 @@ export async function getDocumentVersion(
   if (!row) return null;
 
   const { author, ...rest } = row;
-  return { ...rest, authorName: author?.name ?? null };
+  return {
+    ...rest,
+    source: toDocumentVersionSource(row.source),
+    authorName: author?.name ?? null,
+  };
 }
 
 /** Rótulo em português da origem, usado na listagem e no cabeçalho da versão. */

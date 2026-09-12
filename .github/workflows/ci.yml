@@ -14,7 +14,7 @@ jobs:
     env:
       # Valores fictícios: o build não conecta de fato no banco, só precisa
       # que as variáveis existam para o prisma.config.ts e o auth.ts carregarem.
-      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+      DATABASE_URL: "file:./data/easyopendocs.db"
       NEXTAUTH_SECRET: "ci-only-secret-not-used-in-production"
       NEXTAUTH_URL: "http://localhost:3000"
     steps:
@@ -37,31 +37,17 @@ jobs:
 
       - run: npm run lint
 
-  # Job separado do "build": não precisa de Postgres nem depende dele, então
-  # os dois rodam em paralelo. Os testes batem num Postgres real do próprio
-  # runner — ver tests/README.md para o porquê de não mockar banco/disco aqui.
+  # Job separado do "build": não conecta em serviço nenhum — os testes batem
+  # num SQLite real criado pelo próprio runner (ver tests/README.md para o
+  # porquê de não mockar banco/disco aqui).
   test:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: easyopendocs
-          POSTGRES_PASSWORD: easyopendocs
-          POSTGRES_DB: easyopendocs_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U easyopendocs -d easyopendocs_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
-      TEST_DATABASE_URL: "postgresql://easyopendocs:easyopendocs@localhost:5432/easyopendocs_test?schema=public"
+      TEST_DATABASE_URL: "file:./data/easyopendocs-test.db"
       # Os testes usam TEST_DATABASE_URL, mas o `postinstall` do `npm ci` roda
       # `prisma generate`, e o prisma.config.ts exige DATABASE_URL só para
       # carregar. Nada aqui conecta nesse banco — precisa existir, não resolver.
-      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+      DATABASE_URL: "file:./data/easyopendocs.db"
       NEXTAUTH_SECRET: "ci-only-secret-not-used-in-production"
       NEXTAUTH_URL: "http://localhost:3000"
     steps:

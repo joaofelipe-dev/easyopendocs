@@ -8,21 +8,20 @@ comentários seguem o padrão do que já está lá.
 
 ## Ambiente
 
-Pré-requisitos: **Node.js 22.19+** e um **PostgreSQL 17** acessível.
+Pré-requisitos: **Node.js 22.19+** — somente. O banco é um arquivo SQLite que
+o próprio `migrate` cria.
 
 ```bash
 cp .env.example .env
 openssl rand -base64 32     # cole o resultado em NEXTAUTH_SECRET
 
-npm run db:up               # sobe o Postgres do docker-compose na porta 5433
 npm install
-npm run db:migrate
+npm run db:migrate          # cria data/easyopendocs.db + migrations
 npm run db:seed
 npm run dev                 # http://localhost:3000
 ```
 
-O [README](README.md#como-subir) tem o passo a passo completo, incluindo como
-usar um Postgres nativo em vez do Docker.
+O [README](README.md#como-subir) tem o passo a passo completo.
 
 ## Antes de abrir um PR
 
@@ -40,13 +39,13 @@ npm test
 > páginas usam. Em checkout limpo esses arquivos ainda não existem, então
 > `tsc --noEmit` antes do build falha com `TS2304`.
 
-Os testes precisam de um Postgres acessível em `TEST_DATABASE_URL` — o
-`npm run db:up` sobe um, e `tests/global-setup.ts` cria o banco de teste
-sozinho na primeira execução.
+Os testes recriam o próprio banco SQLite a partir de `TEST_DATABASE_URL` —
+`tests/global-setup.ts` limpa e aplica as migrations na primeira execução, sem
+serviço nenhum pendurado antes.
 
 ## Testes
 
-A suíte é de **integração de verdade**: bate num Postgres real e num
+A suíte é de **integração de verdade**: bate num SQLite real e num
 `CONTENT_ROOT` temporário no disco. Banco, filesystem e sanitizador não são
 mockados — só o limite de framework/identidade é.
 

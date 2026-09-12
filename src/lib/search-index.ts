@@ -11,19 +11,21 @@ import { htmlToPlainText, sanitizeDocumentHtml } from "@/lib/sanitize";
  * RBAC, que depende do NextAuth: o indexador roda dentro do `syncContent`, que
  * não tem nada a ver com sessão. Mesmo motivo de permissions.ts ser separado
  * de rbac.ts.
+ *
+ * O índice mora na tabela virtual `DocumentFts` (SQLite FTS5, criada por
+ * migration) e espelha `plainText`/`searchVersion` do Document — o FTS5 faz a
+ * normalização de caixa e acento na indexação e na consulta, então
+ * "manutencao" encontra "manutenção" nos dois sentidos.
  */
-
-/** Config de busca criada na migration `add_document_search`. */
-export const SEARCH_CONFIG = "pt_unaccent";
 
 /**
- * Versão do indexador. Ao mudar como o vetor é montado (pesos, config de
- * busca, extração de texto), incremente: o sync passa a reprocessar todo
- * documento cujo `searchVersion` não bate, mesmo com mtime e hash intactos.
- * É o que faz o backfill dos documentos já indexados acontecer sozinho no
- * primeiro sync depois do deploy, sem `?force=1` manual.
+ * Versão do indexador. Ao mudar como o índice é montado (pesos, tokenizer,
+ * extração de texto), incremente: o sync passa a reprocessar todo documento
+ * cujo `searchVersion` não bate, mesmo com mtime e hash intactos. É o que faz
+ * o backfill dos documentos já indexados acontecer sozinho no primeiro sync
+ * depois do deploy, sem `?force=1` manual.
  */
-export const SEARCH_INDEX_VERSION = 1;
+export const SEARCH_INDEX_VERSION = 2;
 
 /**
  * Texto puro do corpo de um documento, a partir do arquivo bruto. Passa pelo
@@ -36,9 +38,9 @@ export function documentPlainText(rawHtml: string): string {
 }
 
 /**
- * Grava o vetor de busca de um documento. Pesos: título A, descrição B, corpo
- * C — é o que faz "backup" no título ranquear acima de "backup" citado de
- * passagem no meio de um parágrafo.
+ * Grava o índice de busca de um documento. O FTS5 não faz UPSERT, então o
+ * caminho idempotente é remover e reinserir a linha (documentId é a chave).
+ * O `searchVersion` é atualizado na mesma transação que o índice.
  */
 export async function indexDocumentSearch(input: {
   documentId: string;
@@ -46,13 +48,16 @@ export async function indexDocumentSearch(input: {
   description: string | null;
   plainText: string;
 }): Promise<void> {
-  await prisma.$executeRaw`
-    UPDATE "Document"
-       SET "searchVector" =
-             setweight(to_tsvector(${SEARCH_CONFIG}::regconfig, ${input.title}), 'A') ||
-             setweight(to_tsvector(${SEARCH_CONFIG}::regconfig, ${input.description ?? ""}), 'B') ||
-             setweight(to_tsvector(${SEARCH_CONFIG}::regconfig, ${input.plainText}), 'C'),
-           "searchVersion" = ${SEARCH_INDEX_VERSION}
-     WHERE "id" = ${input.documentId}
-  `;
+  await prisma.$transaction([ 
+    prisma.$executeRaw`
+      DELETE FROM "DocumentFts" WHERE "documentId" = ${input.documentId}
+    `,
+    prisma.$executeRaw`
+      INSERT INTO "DocumentFts" ("documentId", "title", "description", "plainText")
+      VALUES (${input.documentId}, ${input.title}, ${input.description ?? ""}, ${input.plainText})
+    `,
+    prisma.$executeRaw`
+      UPDATE "Document" SET "searchVersion" = ${SEARCH_INDEX_VERSION} WHERE "id" = ${input.documentId}
+    `,
+  ]);
 }

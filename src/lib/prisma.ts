@@ -1,12 +1,21 @@
-import { PrismaPg } from "@prisma/adapter-pg";
+import path from "node:path";
+
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 
 import { PrismaClient } from "@/generated/prisma/client";
 
 // O dev server do Next recarrega módulos a cada edição; sem o cache global cada
-// reload abriria um novo pool de conexões até estourar o limite do Postgres.
+// reload abriria uma nova conexão com o arquivo SQLite.
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
+
+export function sqliteFilePath(connectionString: string): string {
+  // `file:` é relativo à raiz do repo (mesma regra do prisma.config.ts); URLs
+  // absolutas (ex.: file:/tmp/... na Vercel) passam direto.
+  if (!connectionString.startsWith("file:")) return connectionString;
+  return path.resolve(process.cwd(), connectionString.slice("file:".length));
+}
 
 function createPrismaClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
@@ -18,7 +27,7 @@ function createPrismaClient(): PrismaClient {
   }
 
   return new PrismaClient({
-    adapter: new PrismaPg({ connectionString }),
+    adapter: new PrismaBetterSqlite3({ url: sqliteFilePath(connectionString) }),
     log:
       process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });

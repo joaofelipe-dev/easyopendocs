@@ -3,11 +3,14 @@ import { prisma } from "@/lib/prisma";
 export { seedPermissionsAndRoles, upsertUser, assignRole } from "@/lib/rbac-seed";
 
 /**
- * Ordem não importa: TRUNCATE ... CASCADE resolve as dependências. Rodado
- * antes de CADA teste (ver tests/setup.ts) — cada teste que precisa de
- * papéis/permissões chama `seedPermissionsAndRoles()` explicitamente.
+ * SQLite não tem TRUNCATE; o caminho limpo é DELETE por tabela, na ordem
+ * filho→pai. `DocumentFts` (tabela virtual FTS5) não tem FK e precisa ir junto,
+ * senão o índice sobrevive aos documentos que o teste desfez. Rodado antes de
+ * CADA teste (ver tests/setup.ts) — cada teste que precisa de papéis/permissões
+ * chama `seedPermissionsAndRoles()` explicitamente.
  */
 const TABLES = [
+  "DocumentFts",
   "SyncLog",
   "DocumentVersion",
   "UserDepartmentRole",
@@ -20,7 +23,9 @@ const TABLES = [
 ];
 
 export async function resetDatabase(): Promise<void> {
-  await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE ${TABLES.map((table) => `"${table}"`).join(", ")} RESTART IDENTITY CASCADE`,
-  );
+  await prisma.$transaction([
+    ...TABLES.map(
+      (table) => prisma.$executeRawUnsafe(`DELETE FROM "${table}"`),
+    ),
+  ]);
 }
