@@ -40,8 +40,8 @@ export function DepartmentSidebar({
       <Link
         href={base}
         className={cn(
-          "hover:bg-muted flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-[background-color,box-shadow] duration-200",
-          pathname === base && "bg-muted shadow-neu-inset",
+          "hover:bg-muted flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-[color,background-color] duration-150",
+          pathname === base && "bg-muted text-foreground",
         )}
       >
         <FolderOpen className="size-4 shrink-0" />
@@ -52,9 +52,9 @@ export function DepartmentSidebar({
         <Link
           href={`${base}/responsabilidades`}
           className={cn(
-            "hover:bg-muted text-muted-foreground hover:text-foreground -mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-[background-color,box-shadow] duration-200",
+            "hover:bg-muted text-muted-foreground hover:text-foreground -mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-[color,background-color] duration-150",
             pathname.startsWith(`${base}/responsabilidades`) &&
-              "bg-muted text-foreground font-medium shadow-neu-inset",
+              "bg-muted text-foreground font-medium",
           )}
         >
           <ListChecks className="size-4 shrink-0" />
@@ -78,8 +78,8 @@ export function DepartmentSidebar({
                     href={href}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
-                      "hover:bg-muted hover:text-foreground text-muted-foreground flex items-start gap-2 rounded-md px-2 py-1.5 text-sm transition-[background-color,box-shadow] duration-200",
-                      isActive && "bg-muted text-foreground font-medium shadow-neu-inset",
+                      "hover:bg-muted hover:text-foreground text-muted-foreground flex items-start gap-2 rounded-md px-2 py-1.5 text-sm transition-[color,background-color] duration-150",
+                      isActive && "bg-muted text-foreground font-medium",
                     )}
                   >
                     <FileText className="mt-0.5 size-3.5 shrink-0" />
