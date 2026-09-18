@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { slugify } from "@/lib/slug";
+import { DOCUMENT_TEMPLATES } from "@/lib/document-templates";
 
 const INITIAL_STATE: DocumentFormState = { error: null };
 
@@ -85,6 +86,30 @@ export function DocumentEditor({
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
+        {mode === "create" ? (
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="template">Começar com um modelo</Label>
+            <select
+              id="template"
+              defaultValue=""
+              className="border-input bg-background focus-visible:ring-ring/35 h-8 w-full rounded-lg border px-2.5 text-sm outline-none focus-visible:ring-3"
+              onChange={(event) => {
+                const template = DOCUMENT_TEMPLATES.find((item) => item.id === event.target.value);
+                if (template) setBodyHtml(template.bodyHtml);
+              }}
+            >
+              <option value="">Página em branco</option>
+              {DOCUMENT_TEMPLATES.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.label} — {template.description}
+                </option>
+              ))}
+            </select>
+            <p className="text-muted-foreground text-xs">
+              O modelo preenche o conteúdo inicial; tudo continua sendo HTML comum no arquivo final.
+            </p>
+          </div>
+        ) : null}
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="title">Título</Label>
           <Input
