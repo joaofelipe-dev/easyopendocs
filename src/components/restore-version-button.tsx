@@ -14,10 +14,12 @@ export function RestoreVersionButton({
   departmentSlug,
   documentSlug,
   version,
+  backlinkCount,
 }: {
   departmentSlug: string;
   documentSlug: string;
   version: number;
+  backlinkCount: number;
 }) {
   const formId = useId();
 
@@ -33,7 +35,7 @@ export function RestoreVersionButton({
         size="sm"
         aria-label={`Restaurar a versão ${version}`}
         title={`Restaurar a v${version}?`}
-        description="O arquivo no disco volta a ser exatamente o desta versão. O que está publicado agora não se perde: vira mais uma entrada do histórico, e dá para voltar a ele do mesmo jeito."
+        description={`O arquivo no disco volta a ser exatamente o desta versão. O que está publicado agora não se perde: vira mais uma entrada do histórico, e dá para voltar a ele do mesmo jeito.${backlinkCount > 0 ? ` ${backlinkCount === 1 ? "Uma documentação acessível referencia este conteúdo." : `${backlinkCount} documentações acessíveis referenciam este conteúdo.`} Revise o impacto antes de confirmar.` : ""}`}
         confirmLabel="Restaurar"
       >
         <Undo2 />

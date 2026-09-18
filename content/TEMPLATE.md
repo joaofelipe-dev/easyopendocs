@@ -79,6 +79,9 @@ comentário, e para ali.
 | `createdAt`   | opcional    | ISO 8601, preenchido automaticamente por docs da UI    |
 | `reviewEvery` | opcional    | Dias entre revisões desta documentação                  |
 | `reviewedAt`  | opcional    | Data da última revisão (`AAAA-MM-DD`)                  |
+| `owner`       | opcional    | Pessoa ou time que mantém a documentação               |
+| `criticality` | opcional    | `low`, `normal` (padrão) ou `high`                     |
+| `status`      | opcional    | `active` (padrão) ou `deprecated`                      |
 
 Sem `title`, o indexador tenta nesta ordem: tag `<title>` → primeiro `<h1>` →
 nome do arquivo humanizado. Ainda assim, **declare `title` explicitamente** —
@@ -103,6 +106,30 @@ dias** — na listagem e na tela do documento, e conta as vencidas no `/admin`.
   selo em quem nunca pediu para ser acompanhado.
 - O botão **Marcar como revisada** (permissão `document:edit`) carimba a data
   de hoje em `reviewedAt`, alterando só essa linha do arquivo.
+
+### Saúde da documentação
+
+O admin reúne uma fila de conteúdo que precisa de manutenção em
+`/admin/saude`. A regra inicial é intencionalmente simples: documentos ativos
+precisam de um resumo e de um responsável; os de criticidade `high` também
+precisam participar de um ciclo de revisão. Conteúdo com `status: deprecated`
+continua acessível, mas sai dessa fila.
+
+```html
+<!-- owner: Plataforma -->
+<!-- criticality: high -->
+<!-- status: active -->
+```
+
+### Links entre documentações
+
+Use a URL canônica ao apontar para outra documentação. O sync indexa esses
+links, exibe backlinks na página de destino e denuncia destinos ausentes em
+`/admin/saude`. Links externos continuam livres, mas não entram no índice.
+
+```html
+<a href="/departamentos/engenharia/setup-ambiente">Configurar o ambiente</a>
+```
 
 ### Corpo
 

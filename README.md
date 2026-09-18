@@ -119,6 +119,7 @@ duas listas e criar tudo pela interface em `/admin`.
 | `npm run typecheck`  | `tsc --noEmit`                                     |
 | `npm run lint`       | ESLint                                             |
 | `npm test`           | Testes de integração (Vitest) — ver [`tests/README.md`](tests/README.md) |
+| `npm run docs:validate` | Valida slugs e metadados de conteúdo para CI; ausências viram avisos para permitir migração gradual |
 | `npm run db:migrate` | `prisma migrate dev`                               |
 | `npm run db:seed`    | Roda o seed (idempotente)                          |
 | `npm run db:reset`   | **Apaga o banco** e reaplica migrations + seed     |

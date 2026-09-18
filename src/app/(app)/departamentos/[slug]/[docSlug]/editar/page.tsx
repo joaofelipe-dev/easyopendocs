@@ -6,10 +6,12 @@ import { ChevronRight } from "lucide-react";
 import { updateDocumentAction } from "@/actions/documents";
 import { BackLink } from "@/components/back-link";
 import { DocumentEditor } from "@/components/document-editor";
+import { DocumentImpactNotice } from "@/components/document-impact-notice";
 import { parseFrontMatter } from "@/lib/content";
+import { listDocumentBacklinks } from "@/lib/document-backlinks";
 import { readDocumentSource } from "@/lib/content-sync";
 import { prisma } from "@/lib/prisma";
-import { PERMISSIONS, requireDepartmentAccess } from "@/lib/rbac";
+import { getCurrentUser, PERMISSIONS, requireDepartmentAccess } from "@/lib/rbac";
 
 export const metadata: Metadata = { title: "Editar documentação" };
 export const dynamic = "force-dynamic";
@@ -27,6 +29,14 @@ export default async function EditDocumentPage({
 
   const source = await readDocumentSource(document.filePath);
   if (source === null) notFound();
+  const user = await getCurrentUser();
+  if (!user) notFound();
+  const backlinks = await listDocumentBacklinks({
+    user,
+    departmentSlug: access.department.slug,
+    documentSlug: document.slug,
+    excludeSourceDocumentId: document.id,
+  });
 
   // O front-matter é reconstruído a partir dos campos do formulário na hora de
   // salvar, então o textarea recebe só o corpo.
@@ -72,6 +82,8 @@ export default async function EditDocumentPage({
         </p>
       </header>
 
+      <DocumentImpactNotice links={backlinks} action="alterar" />
+
       <DocumentEditor
         action={updateDocumentAction}
         departmentSlug={access.department.slug}
@@ -81,6 +93,9 @@ export default async function EditDocumentPage({
           documentSlug: document.slug,
           title: document.title,
           description: document.description ?? "",
+          owner: document.owner ?? "",
+          criticality: document.criticality as "low" | "normal" | "high",
+          status: document.contentStatus as "active" | "deprecated",
           bodyHtml: body,
         }}
       />

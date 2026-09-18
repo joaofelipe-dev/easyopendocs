@@ -1,3 +1,4 @@
+@import "./brand-tokens.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -167,6 +168,32 @@
  * e o estilo é responsabilidade do app. Por isso a estilização é por tag.
  * ------------------------------------------------------------------------- */
 @layer components {
+  .health-summary--attention {
+    border-color: var(--color-warning);
+    background: var(--color-warning-light);
+    color: var(--color-warning-text);
+  }
+
+  .health-summary--neutral {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+    color: var(--color-primary-text);
+  }
+
+  .health-summary .text-muted-foreground {
+    color: currentColor;
+    opacity: 0.78;
+  }
+
+  .backlink-panel {
+    border-color: var(--color-secondary);
+    background: var(--color-secondary-light);
+  }
+
+  .backlink-panel .text-muted-foreground {
+    color: var(--color-secondary-text);
+  }
+
   .doc-content {
     @apply text-foreground/90 text-[0.9375rem] leading-7;
   }

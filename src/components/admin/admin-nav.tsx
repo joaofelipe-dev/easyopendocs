@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FolderTree, KeyRound, LayoutDashboard, RefreshCw, Users } from "lucide-react";
+import { Activity, FolderTree, KeyRound, LayoutDashboard, RefreshCw, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 const LINKS = [
   { href: "/admin", label: "Visão geral", icon: LayoutDashboard },
+  { href: "/admin/saude", label: "Saúde da documentação", icon: Activity },
   { href: "/admin/usuarios", label: "Usuários", icon: Users },
   { href: "/admin/departamentos", label: "Departamentos", icon: FolderTree },
   { href: "/admin/papeis", label: "Papéis e permissões", icon: KeyRound },

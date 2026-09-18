@@ -22,12 +22,22 @@ function departmentDir(slug: string): string {
 async function writeDocument(
   departmentSlug: string,
   documentSlug: string,
-  options: { title: string; description?: string; body?: string } = { title: "Título" },
+  options: {
+    title: string;
+    description?: string;
+    body?: string;
+    owner?: string;
+    criticality?: string;
+    status?: string;
+  } = { title: "Título" },
 ): Promise<void> {
   await fs.mkdir(departmentDir(departmentSlug), { recursive: true });
 
   const lines = [`<!-- title: ${options.title} -->`];
   if (options.description) lines.push(`<!-- description: ${options.description} -->`);
+  if (options.owner) lines.push(`<!-- owner: ${options.owner} -->`);
+  if (options.criticality) lines.push(`<!-- criticality: ${options.criticality} -->`);
+  if (options.status) lines.push(`<!-- status: ${options.status} -->`);
   lines.push(`<article>${options.body ?? "<p>conteúdo</p>"}</article>`, "");
 
   await fs.writeFile(
@@ -93,6 +103,42 @@ describe("syncContent", () => {
     const department = await prisma.department.findUniqueOrThrow({ where: { slug: "rh" } });
     expect(department.name).toBe("Recursos Humanos");
     expect(department.description).toBe("Pessoas e cultura");
+  });
+
+  it("espelha os metadados de saúde declarados no front-matter", async () => {
+    await writeDocument("ti", "backup", {
+      title: "Rotina de backup",
+      owner: "Plataforma",
+      criticality: "high",
+      status: "deprecated",
+    });
+
+    await syncContent({ trigger: "MANUAL", force: true });
+
+    expect(await getDocument("ti", "backup")).toMatchObject({
+      owner: "Plataforma",
+      criticality: "high",
+      contentStatus: "deprecated",
+    });
+  });
+
+  it("indexa links internos sem tornar URLs externas em dependências", async () => {
+    await writeDocument("ti", "destino", { title: "Destino" });
+    await writeDocument("ti", "origem", {
+      title: "Origem",
+      body: '<p><a href="/departamentos/ti/destino">Destino</a> <a href="https://example.com">Externo</a></p>',
+    });
+
+    await syncContent({ trigger: "MANUAL", force: true });
+
+    const source = await getDocument("ti", "origem");
+    expect(await prisma.documentLink.findMany({ where: { sourceDocumentId: source.id } })).toMatchObject([
+      {
+        targetDepartmentSlug: "ti",
+        targetDocumentSlug: "destino",
+        href: "/departamentos/ti/destino",
+      },
+    ]);
   });
 
   it("ignora arquivos e pastas prefixados com _ (não viram documento)", async () => {

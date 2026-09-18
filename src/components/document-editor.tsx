@@ -46,6 +46,9 @@ export function DocumentEditor({
     documentSlug: string;
     title: string;
     description: string;
+    owner: string;
+    criticality: "low" | "normal" | "high";
+    status: "active" | "deprecated";
     bodyHtml: string;
   };
 }) {
@@ -147,6 +150,56 @@ export function DocumentEditor({
           {state.fieldErrors?.description ? (
             <p className="text-destructive text-xs">
               {state.fieldErrors.description}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="owner">
+            Responsável <span className="text-muted-foreground font-normal">(opcional)</span>
+          </Label>
+          <Input
+            id="owner"
+            name="owner"
+            defaultValue={initialValues?.owner ?? ""}
+            placeholder="Time ou pessoa que mantém este conteúdo"
+            maxLength={120}
+          />
+          <p className="text-muted-foreground text-xs">
+            Aparece na saúde da documentação para deixar claro quem pode confirmar uma mudança.
+          </p>
+          {state.fieldErrors?.owner ? <p className="text-destructive text-xs">{state.fieldErrors.owner}</p> : null}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="criticality">Criticidade</Label>
+            <select
+              id="criticality"
+              name="criticality"
+              defaultValue={initialValues?.criticality ?? "normal"}
+              className="border-input bg-background focus-visible:ring-ring/35 h-8 w-full rounded-lg border px-2.5 text-sm outline-none focus-visible:ring-3"
+            >
+              <option value="low">Baixa</option>
+              <option value="normal">Normal</option>
+              <option value="high">Alta</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="status">Status</Label>
+            <select
+              id="status"
+              name="status"
+              defaultValue={initialValues?.status ?? "active"}
+              className="border-input bg-background focus-visible:ring-ring/35 h-8 w-full rounded-lg border px-2.5 text-sm outline-none focus-visible:ring-3"
+            >
+              <option value="active">Ativa</option>
+              <option value="deprecated">Descontinuada</option>
+            </select>
+          </div>
+          {state.fieldErrors?.criticality || state.fieldErrors?.status ? (
+            <p className="text-destructive col-span-2 text-xs">
+              {state.fieldErrors.criticality ?? state.fieldErrors.status}
             </p>
           ) : null}
         </div>

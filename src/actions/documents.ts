@@ -20,6 +20,10 @@ import {
 import { readDocumentSource, syncContent } from "@/lib/content-sync";
 import { claimDocumentVersion, getDocumentVersion } from "@/lib/document-version";
 import { formatReviewedAt } from "@/lib/review-cycle";
+import {
+  DOCUMENT_CRITICALITIES,
+  DOCUMENT_STATUSES,
+} from "@/lib/document-health";
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, getCurrentUser, requireDepartmentAccess } from "@/lib/rbac";
 import { sanitizeDocumentHtml } from "@/lib/sanitize";
@@ -29,7 +33,9 @@ import { actionError, actionSuccess, type ActionState } from "@/lib/action-state
 // compilação, então `export type` é permitido).
 export type DocumentFormState = {
   error: string | null;
-  fieldErrors?: Partial<Record<"title" | "description" | "bodyHtml", string>>;
+  fieldErrors?: Partial<
+    Record<"title" | "description" | "owner" | "criticality" | "status" | "bodyHtml", string>
+  >;
 };
 
 /**
@@ -55,6 +61,9 @@ const documentSchema = z.object({
     .trim()
     .max(300, "A descrição pode ter no máximo 300 caracteres.")
     .optional(),
+  owner: z.string().trim().max(120, "O responsável pode ter no máximo 120 caracteres.").optional(),
+  criticality: z.enum(DOCUMENT_CRITICALITIES, "Selecione uma criticidade válida."),
+  status: z.enum(DOCUMENT_STATUSES, "Selecione um status válido."),
   bodyHtml: z.string().trim().min(1, "O conteúdo não pode ficar vazio."),
 });
 
@@ -62,6 +71,9 @@ function parseForm(formData: FormData) {
   return documentSchema.safeParse({
     title: String(formData.get("title") ?? ""),
     description: String(formData.get("description") ?? ""),
+    owner: String(formData.get("owner") ?? ""),
+    criticality: String(formData.get("criticality") ?? "normal"),
+    status: String(formData.get("status") ?? "active"),
     bodyHtml: String(formData.get("bodyHtml") ?? ""),
   });
 }
@@ -72,7 +84,14 @@ function toFieldErrors(
   const fieldErrors: DocumentFormState["fieldErrors"] = {};
   for (const issue of issues) {
     const field = issue.path[0];
-    if (field === "title" || field === "description" || field === "bodyHtml") {
+    if (
+      field === "title" ||
+      field === "description" ||
+      field === "owner" ||
+      field === "criticality" ||
+      field === "status" ||
+      field === "bodyHtml"
+    ) {
       fieldErrors[field] ??= issue.message;
     }
   }
@@ -106,7 +125,7 @@ export async function createDocumentAction(
     };
   }
 
-  const { title, description, bodyHtml } = parsed.data;
+  const { title, description, owner, criticality, status, bodyHtml } = parsed.data;
   const documentSlug = slugify(title);
 
   if (!isValidSlug(documentSlug)) {
@@ -133,6 +152,7 @@ export async function createDocumentAction(
     description: description || null,
     bodyHtml: sanitizeDocumentHtml(bodyHtml),
     author: user.name,
+    metadata: { owner: owner || null, criticality, status },
   });
 
   try {
@@ -218,7 +238,7 @@ export async function updateDocumentAction(
     return { error: "Esta documentação não existe mais." };
   }
 
-  const { title, description, bodyHtml } = parsed.data;
+  const { title, description, owner, criticality, status, bodyHtml } = parsed.data;
 
   // O cabeçalho é remontado a partir do formulário, então o front-matter que a
   // tela não conhece precisa ser relido do arquivo e devolvido — senão editar
@@ -236,6 +256,7 @@ export async function updateDocumentAction(
     author: user.name,
     createdAt: existing.createdAt,
     preserve,
+    metadata: { owner: owner || null, criticality, status },
   });
 
   try {

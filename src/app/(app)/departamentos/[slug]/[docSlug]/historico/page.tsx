@@ -5,6 +5,7 @@ import { ChevronRight, FileClock, History } from "lucide-react";
 
 import { BackLink } from "@/components/back-link";
 import { DiffView } from "@/components/diff-view";
+import { DocumentImpactNotice } from "@/components/document-impact-notice";
 import { RestoreVersionButton } from "@/components/restore-version-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,8 @@ import {
   type DocumentVersionSummary,
 } from "@/lib/document-version";
 import { prisma } from "@/lib/prisma";
-import { PERMISSIONS, can, requireDepartmentAccess } from "@/lib/rbac";
+import { listDocumentBacklinks } from "@/lib/document-backlinks";
+import { getCurrentUser, PERMISSIONS, can, requireDepartmentAccess } from "@/lib/rbac";
 import { diffDocuments } from "@/lib/text-diff";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +63,15 @@ export default async function DocumentHistoryPage({
     where: { departmentId_slug: { departmentId: access.department.id, slug: docSlug } },
   });
   if (!document || document.isOrphan) notFound();
+
+  const user = await getCurrentUser();
+  if (!user) notFound();
+  const backlinks = await listDocumentBacklinks({
+    user,
+    departmentSlug: access.department.slug,
+    documentSlug: document.slug,
+    excludeSourceDocumentId: document.id,
+  });
 
   const versions = await listDocumentVersions(document.id);
   const canRestore = can(access, PERMISSIONS.documentEdit);
@@ -108,6 +119,8 @@ export default async function DocumentHistoryPage({
         </p>
       </header>
 
+      <DocumentImpactNotice links={backlinks} action="restaurar" />
+
       {versions.length === 0 ? (
         <EmptyHistory />
       ) : (
@@ -135,6 +148,7 @@ export default async function DocumentHistoryPage({
             departmentSlug={access.department.slug}
             documentSlug={document.slug}
             canRestore={canRestore}
+            backlinkCount={backlinks.length}
           />
         </div>
       )}
@@ -151,6 +165,7 @@ function VersionList({
   departmentSlug,
   documentSlug,
   canRestore,
+  backlinkCount,
 }: {
   versions: DocumentVersionSummary[];
   currentHash: string;
@@ -158,6 +173,7 @@ function VersionList({
   departmentSlug: string;
   documentSlug: string;
   canRestore: boolean;
+  backlinkCount: number;
 }) {
   return (
     <ul className="space-y-3">
@@ -217,6 +233,7 @@ function VersionList({
                       departmentSlug={departmentSlug}
                       documentSlug={documentSlug}
                       version={version.version}
+                      backlinkCount={backlinkCount}
                     />
                   ) : null}
                 </div>
