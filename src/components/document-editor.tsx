@@ -102,8 +102,8 @@ export function DocumentEditor({
 
   useEffect(() => {
     const first = firstErrorField;
-    if (first === "bodyHtml") setTab("editar");
     const frame = requestAnimationFrame(() => {
+      if (first === "bodyHtml") setTab("editar");
       const target = first === "bodyHtml" ? "document-body" : first ?? "document-form-error";
       formRef.current?.querySelector<HTMLElement>(`#${target}`)?.focus();
     });
