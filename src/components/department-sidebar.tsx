@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { FileText, FolderOpen, ListChecks, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { DepartmentNavigation } from "@/components/department-navigation";
 import { cn } from "@/lib/utils";
 
 export type SidebarDocument = {
@@ -33,14 +33,17 @@ export function DepartmentSidebar({
   const base = `/departamentos/${departmentSlug}`;
 
   return (
+    <DepartmentNavigation name={departmentName}>
     <nav
       aria-label={`Documentações de ${departmentName}`}
       className="flex flex-col gap-3"
     >
+      <p className="text-muted-foreground px-3 text-xs font-medium uppercase tracking-widest">Neste departamento</p>
       <Link
         href={base}
+        aria-current={pathname === base ? "page" : undefined}
         className={cn(
-          "hover:bg-muted flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-[color,background-color] duration-150",
+          "hover:bg-muted flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-[color,background-color] duration-150 focus-visible:outline-2 focus-visible:outline-ring",
           pathname === base && "bg-muted text-foreground",
         )}
       >
@@ -51,8 +54,9 @@ export function DepartmentSidebar({
       {hasResponsibilities || canManage ? (
         <Link
           href={`${base}/responsabilidades`}
+          aria-current={pathname.startsWith(`${base}/responsabilidades`) ? "page" : undefined}
           className={cn(
-            "hover:bg-muted text-muted-foreground hover:text-foreground -mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-[color,background-color] duration-150",
+            "hover:bg-muted text-muted-foreground hover:text-foreground -mt-1 flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm transition-[color,background-color] duration-150 focus-visible:outline-2 focus-visible:outline-ring",
             pathname.startsWith(`${base}/responsabilidades`) &&
               "bg-muted text-foreground font-medium",
           )}
@@ -66,11 +70,11 @@ export function DepartmentSidebar({
       ) : null}
 
       {documents.length > 0 ? (
-        <ScrollArea className="max-h-[60vh]">
+        <div className="max-h-[60vh] overflow-y-auto overscroll-contain">
           <ul className="border-border/70 ml-4 space-y-0.5 border-l pl-2">
             {documents.map((document) => {
               const href = `${base}/${document.slug}`;
-              const isActive = pathname === href;
+              const isActive = pathname === href || pathname.startsWith(`${href}/`);
 
               return (
                 <li key={document.slug}>
@@ -78,18 +82,18 @@ export function DepartmentSidebar({
                     href={href}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
-                      "hover:bg-muted hover:text-foreground text-muted-foreground flex items-start gap-2 rounded-md px-2 py-1.5 text-sm transition-[color,background-color] duration-150",
-                      isActive && "bg-muted text-foreground font-medium",
+                      "hover:bg-muted hover:text-foreground text-muted-foreground flex min-h-11 items-start gap-2 rounded-lg px-3 py-2.5 text-sm transition-[color,background-color] duration-150 focus-visible:outline-2 focus-visible:outline-ring",
+                      isActive && "bg-primary/10 text-primary font-semibold",
                     )}
                   >
                     <FileText className="mt-0.5 size-3.5 shrink-0" />
-                    <span className="leading-snug">{document.title}</span>
+                    <span className="min-w-0 break-words leading-snug">{document.title}</span>
                   </Link>
                 </li>
               );
             })}
           </ul>
-        </ScrollArea>
+        </div>
       ) : (
         <p className="text-muted-foreground px-3 text-xs">
           Nenhuma documentação ainda.
@@ -105,5 +109,6 @@ export function DepartmentSidebar({
         </Button>
       ) : null}
     </nav>
+    </DepartmentNavigation>
   );
 }

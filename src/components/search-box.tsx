@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { Search } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 /**
  * Campo de busca do cabeçalho. É um `<form method="get">` de propósito: sem
@@ -16,6 +17,7 @@ export function SearchBox({
   className,
   placeholder = "Buscar documentação…",
   autoFocus = false,
+  globalShortcut = false,
 }: {
   defaultValue?: string;
   /** Quando presente, a busca já nasce restrita a este departamento. */
@@ -23,20 +25,23 @@ export function SearchBox({
   className?: string;
   placeholder?: string;
   autoFocus?: boolean;
+  globalShortcut?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   // "/" foca a busca, como na maioria dos portais de documentação. Só quando o
   // foco não está em outro campo — senão digitar uma barra viraria um atalho.
   useEffect(() => {
+    if (!globalShortcut) return;
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented || event.isComposing || event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
 
       const active = document.activeElement;
       const typing =
         active instanceof HTMLInputElement ||
         active instanceof HTMLTextAreaElement ||
-        (active instanceof HTMLElement && active.isContentEditable);
+        active instanceof HTMLSelectElement ||
+        (active instanceof HTMLElement && (active.isContentEditable || !!active.closest('[role="dialog"], [role="textbox"], [role="combobox"], [role="menu"]')));
       if (typing) return;
 
       event.preventDefault();
@@ -45,15 +50,15 @@ export function SearchBox({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [globalShortcut]);
 
   return (
     <form action="/busca" method="get" role="search" className={className}>
       {departmentSlug ? (
         <input type="hidden" name="departamento" value={departmentSlug} />
       ) : null}
-      <div className="relative">
-        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+      <div className="relative flex items-center gap-2">
+        <Search aria-hidden="true" className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
         <Input
           ref={inputRef}
           type="search"
@@ -61,9 +66,11 @@ export function SearchBox({
           defaultValue={defaultValue}
           placeholder={placeholder}
           aria-label="Buscar documentação"
+          aria-keyshortcuts={globalShortcut ? "/" : undefined}
           autoFocus={autoFocus}
-          className="pl-8"
+          className="h-11 rounded-xl bg-muted/40 pl-9"
         />
+        <Button type="submit" variant="secondary" className="h-11 rounded-xl px-4">Buscar</Button>
       </div>
     </form>
   );

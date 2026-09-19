@@ -25,25 +25,24 @@ function initials(name: string): string {
 export function AppHeader({ user }: { user: CurrentUser }) {
   return (
     <header className="bg-background/95 supports-[backdrop-filter]:bg-background/75 print:hidden sticky top-0 z-30 border-b backdrop-blur">
-      <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 sm:px-6">
+      <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6 md:flex-nowrap md:gap-6">
         <Link
           href="/"
-          className="flex items-center gap-2 font-semibold tracking-tight"
+          className="mr-auto flex shrink-0 items-center gap-2.5 rounded-lg font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring md:mr-0"
         >
-          <span className="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-lg">
-            <BookMarked className="size-4" />
+          <span className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-xl">
+            <BookMarked aria-hidden="true" className="size-5" />
           </span>
-          <span className="hidden sm:inline">Portal de Documentações</span>
-          <span className="sm:hidden">Docs</span>
+          <span className="flex flex-col"><span className="text-base">easyopendocs</span><span className="text-muted-foreground text-xs font-normal tracking-normal">Portal de conhecimento</span></span>
         </Link>
 
-        <div className="flex flex-1 justify-center px-2">
-          <SearchBox className="w-full max-w-sm" />
+        <div className="order-last w-full min-w-0 md:order-none md:flex-1">
+          <SearchBox globalShortcut className="w-full" />
         </div>
 
         {user.isSuperAdmin ? (
           <Button asChild variant="ghost" size="sm">
-            <Link href="/admin">
+            <Link href="/admin" aria-label="Administração">
               <Shield />
               <span className="hidden sm:inline">Administração</span>
             </Link>

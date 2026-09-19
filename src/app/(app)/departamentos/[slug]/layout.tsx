@@ -30,9 +30,9 @@ export default async function DepartmentLayout({
   ]);
 
   return (
-    <div className="print:block mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 lg:flex-row">
+    <div className="print:block mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row lg:gap-10 lg:py-10">
       <aside className="print:hidden lg:w-64 lg:shrink-0">
-        <div className="lg:sticky lg:top-20">
+        <div className="lg:sticky lg:top-24">
           <DepartmentSidebar
             departmentSlug={access.department.slug}
             departmentName={access.department.name}
