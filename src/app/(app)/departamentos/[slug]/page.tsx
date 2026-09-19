@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { FileText, FilePlus2, Inbox } from "lucide-react";
+import { ArrowUpRight, FileText, FilePlus2, Inbox } from "lucide-react";
 
 import { SearchBox } from "@/components/search-box";
 import { ReviewBadge } from "@/components/review-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, can, requireDepartmentAccess } from "@/lib/rbac";
 import { reviewStatus, type ReviewStatus } from "@/lib/review-cycle";
@@ -65,9 +65,10 @@ export default async function DepartmentPage({
 
   return (
     <main>
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b pb-6">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <p className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-widest">Departamento</p>
+          <h1 className="text-3xl font-semibold tracking-tight break-words">
             {access.department.name}
           </h1>
           {access.department.description ? (
@@ -85,11 +86,6 @@ export default async function DepartmentPage({
                 </Badge>
               ))
             )}
-            {access.isSuperAdmin ? (
-              <code className="text-muted-foreground text-xs">
-                {access.department.path}/
-              </code>
-            ) : null}
           </div>
         </div>
 
@@ -103,16 +99,17 @@ export default async function DepartmentPage({
         ) : null}
       </header>
 
+      <section aria-label="Encontrar documentação" className="mb-6 space-y-4">
       {documents.length > 0 ? (
         <SearchBox
           departmentSlug={access.department.slug}
           placeholder={`Buscar em ${access.department.name}…`}
-          className="mb-6 max-w-md"
+          className="max-w-xl"
         />
       ) : null}
 
-      {overdueCount > 0 ? (
-        <nav aria-label="Filtrar por revisão" className="mb-6 flex flex-wrap gap-2">
+      {overdueCount > 0 || onlyOverdue ? (
+        <nav aria-label="Filtrar por revisão" className="flex flex-wrap gap-2">
           <FilterChip
             href={`/departamentos/${access.department.slug}`}
             active={!onlyOverdue}
@@ -127,6 +124,7 @@ export default async function DepartmentPage({
           </FilterChip>
         </nav>
       ) : null}
+      </section>
 
       {documents.length === 0 ? (
         <Card className="border-dashed">
@@ -138,45 +136,56 @@ export default async function DepartmentPage({
               <p className="font-medium">Nenhuma documentação por aqui</p>
               <p className="text-muted-foreground mx-auto max-w-md text-sm">
                 {canCreate
-                  ? "Crie a primeira pela UI ou coloque um arquivo .html na pasta do departamento — ele aparece automaticamente."
+                  ? "Use Nova documentação para compartilhar o primeiro guia ou processo da equipe."
                   : "Assim que alguém publicar uma documentação neste departamento, ela aparece aqui."}
               </p>
             </div>
           </CardContent>
         </Card>
+      ) : visible.length === 0 ? (
+        <div className="bg-card rounded-xl border p-8 text-center">
+          <h2 className="font-semibold">Nenhuma revisão vencida</h2>
+          <p className="text-muted-foreground mt-2 text-sm">As documentações deste departamento estão em dia com o ciclo de revisão.</p>
+          <Button asChild variant="outline" className="mt-4">
+            <Link href={`/departamentos/${access.department.slug}`}>Ver todas as documentações</Link>
+          </Button>
+        </div>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <section aria-labelledby="document-list-title">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 id="document-list-title" className="text-sm font-semibold">{onlyOverdue ? "Para revisar" : "Documentações"}</h2>
+          <span className="text-muted-foreground text-xs tabular-nums">{visible.length} {visible.length === 1 ? "documentação" : "documentações"}</span>
+        </div>
+        <ul className="bg-card divide-y overflow-hidden rounded-xl border">
           {visible.map((document) => (
             <li key={document.id}>
               <Link
                 href={`/departamentos/${access.department.slug}/${document.slug}`}
-                className="focus-visible:ring-ring block h-full rounded-xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="group hover:bg-muted/60 focus-visible:ring-ring flex min-w-0 items-start gap-3 p-4 transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none sm:gap-4 sm:p-5"
               >
-                <Card className="h-full gap-3 hover:border-foreground/20 hover:shadow-md">
-                  <CardHeader>
-                    <span className="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-lg">
-                      <FileText className="size-4" />
-                    </span>
-                    <CardTitle className="mt-2 text-base leading-snug">
+                <span className="bg-muted text-muted-foreground mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg">
+                  <FileText className="size-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                    <h3 className="font-medium leading-snug break-words group-hover:underline group-hover:underline-offset-4">
                       {document.title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
+                    </h3>
                     {document.description ? (
-                      <p className="text-muted-foreground line-clamp-2 text-sm">
+                      <p className="text-muted-foreground mt-1 line-clamp-2 text-sm break-words">
                         {document.description}
                       </p>
                     ) : null}
-                    <p className="text-muted-foreground text-xs">
-                      Atualizado em {DATE_FORMAT.format(document.fileMtime)}
-                    </p>
-                    <ReviewBadge status={document.review} />
-                  </CardContent>
-                </Card>
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <p className="text-muted-foreground text-xs">Atualizado em {DATE_FORMAT.format(document.fileMtime)}</p>
+                      <ReviewBadge status={document.review} />
+                    </div>
+                </div>
+                <ArrowUpRight className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden="true" />
               </Link>
             </li>
           ))}
         </ul>
+        </section>
       )}
     </main>
   );
@@ -197,8 +206,8 @@ function FilterChip({
       aria-current={active ? "true" : undefined}
       className={
         active
-          ? "bg-primary text-primary-foreground rounded-full border border-transparent px-3 py-1 text-xs"
-          : "text-muted-foreground hover:text-foreground hover:bg-muted rounded-full border px-3 py-1 text-xs transition-colors"
+          ? "bg-primary text-primary-foreground inline-flex min-h-9 items-center rounded-lg border border-transparent px-3 py-1 text-sm"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted inline-flex min-h-9 items-center rounded-lg border px-3 py-1 text-sm transition-colors"
       }
     >
       {children}
