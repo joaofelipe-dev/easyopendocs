@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { AlertCircle, Eye, Pencil, Save } from "lucide-react";
@@ -56,9 +56,59 @@ export function DocumentEditor({
 
   const [title, setTitle] = useState(initialValues?.title ?? "");
   const [bodyHtml, setBodyHtml] = useState(initialValues?.bodyHtml ?? "");
+  const [description, setDescription] = useState(initialValues?.description ?? "");
+  const [owner, setOwner] = useState(initialValues?.owner ?? "");
+  const [criticality, setCriticality] = useState(initialValues?.criticality ?? "normal");
+  const [status, setStatus] = useState(initialValues?.status ?? "active");
+  const [templateId, setTemplateId] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const dirty = title !== (initialValues?.title ?? "") || bodyHtml !== (initialValues?.bodyHtml ?? "") ||
+    description !== (initialValues?.description ?? "") || owner !== (initialValues?.owner ?? "") ||
+    criticality !== (initialValues?.criticality ?? "normal") || status !== (initialValues?.status ?? "active");
   const [tab, setTab] = useState("editar");
   const [preview, setPreview] = useState("");
   const [isPreviewing, startPreview] = useTransition();
+  const firstErrorField = (["title", "description", "owner", "criticality", "status", "bodyHtml"] as const)
+    .find((field) => state.fieldErrors?.[field]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    // Capture before Next's link handler, preserving its normal navigation on acceptance.
+    // Browser Back/Forward within the SPA is intentionally not intercepted.
+    const leaveViaLink = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download") || (anchor.target && anchor.target !== "_self")) return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (destination.origin === window.location.origin && destination.pathname === window.location.pathname && destination.search === window.location.search) return;
+      if (!window.confirm("Há alterações não salvas. Sair e descartá-las?")) {
+        event.preventDefault();
+        event.stopPropagation();
+      } else {
+        window.removeEventListener("beforeunload", beforeUnload);
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("click", leaveViaLink, true);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("click", leaveViaLink, true);
+    };
+  }, [dirty]);
+
+  useEffect(() => {
+    const first = firstErrorField;
+    if (first === "bodyHtml") setTab("editar");
+    const frame = requestAnimationFrame(() => {
+      const target = first === "bodyHtml" ? "document-body" : first ?? "document-form-error";
+      formRef.current?.querySelector<HTMLElement>(`#${target}`)?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [state, firstErrorField]);
 
   // Ao editar, o nome do arquivo é imutável: renomear quebraria links já
   // compartilhados. Ao criar, ele é derivado do título em tempo real.
@@ -82,7 +132,7 @@ export function DocumentEditor({
     : `content/departamentos/${departmentSlug}/…`;
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form ref={formRef} action={formAction} className="space-y-6">
       <input type="hidden" name="departmentSlug" value={departmentSlug} />
       {mode === "edit" ? (
         <input type="hidden" name="documentSlug" value={documentSlug} />
@@ -94,11 +144,13 @@ export function DocumentEditor({
             <Label htmlFor="template">Começar com um modelo</Label>
             <select
               id="template"
-              defaultValue=""
+              value={templateId}
               className="border-input bg-background focus-visible:ring-ring/35 h-8 w-full rounded-lg border px-2.5 text-sm outline-none focus-visible:ring-3"
               onChange={(event) => {
                 const template = DOCUMENT_TEMPLATES.find((item) => item.id === event.target.value);
-                if (template) setBodyHtml(template.bodyHtml);
+                if (bodyHtml.trim() && !window.confirm("Substituir o conteúdo atual pelo modelo? Esta alteração descarta o texto do editor.")) return;
+                setTemplateId(event.target.value);
+                setBodyHtml(template?.bodyHtml ?? "");
               }}
             >
               <option value="">Página em branco</option>
@@ -123,10 +175,12 @@ export function DocumentEditor({
             placeholder="Como configurar o ambiente local"
             maxLength={160}
             required
+            aria-invalid={Boolean(state.fieldErrors?.title)}
+            aria-describedby={state.fieldErrors?.title ? "title-error" : undefined}
             autoFocus
           />
           {state.fieldErrors?.title ? (
-            <p className="text-destructive text-xs">{state.fieldErrors.title}</p>
+            <p id="title-error" className="text-destructive text-xs">{state.fieldErrors.title}</p>
           ) : (
             <p className="text-muted-foreground text-xs">
               Arquivo: <code className="font-mono">{filePath}</code>
@@ -143,12 +197,15 @@ export function DocumentEditor({
           <Input
             id="description"
             name="description"
-            defaultValue={initialValues?.description ?? ""}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            aria-invalid={Boolean(state.fieldErrors?.description)}
+            aria-describedby={state.fieldErrors?.description ? "description-error" : undefined}
             placeholder="Resumo de uma linha exibido na listagem do departamento"
             maxLength={300}
           />
           {state.fieldErrors?.description ? (
-            <p className="text-destructive text-xs">
+            <p id="description-error" className="text-destructive text-xs">
               {state.fieldErrors.description}
             </p>
           ) : null}
@@ -161,14 +218,17 @@ export function DocumentEditor({
           <Input
             id="owner"
             name="owner"
-            defaultValue={initialValues?.owner ?? ""}
+            value={owner}
+            onChange={(event) => setOwner(event.target.value)}
+            aria-invalid={Boolean(state.fieldErrors?.owner)}
+            aria-describedby={state.fieldErrors?.owner ? "owner-error" : undefined}
             placeholder="Time ou pessoa que mantém este conteúdo"
             maxLength={120}
           />
           <p className="text-muted-foreground text-xs">
             Aparece na saúde da documentação para deixar claro quem pode confirmar uma mudança.
           </p>
-          {state.fieldErrors?.owner ? <p className="text-destructive text-xs">{state.fieldErrors.owner}</p> : null}
+          {state.fieldErrors?.owner ? <p id="owner-error" className="text-destructive text-xs">{state.fieldErrors.owner}</p> : null}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -177,7 +237,10 @@ export function DocumentEditor({
             <select
               id="criticality"
               name="criticality"
-              defaultValue={initialValues?.criticality ?? "normal"}
+              value={criticality}
+              onChange={(event) => setCriticality(event.target.value as typeof criticality)}
+              aria-invalid={Boolean(state.fieldErrors?.criticality)}
+              aria-describedby={state.fieldErrors?.criticality ? "metadata-error" : undefined}
               className="border-input bg-background focus-visible:ring-ring/35 h-8 w-full rounded-lg border px-2.5 text-sm outline-none focus-visible:ring-3"
             >
               <option value="low">Baixa</option>
@@ -190,7 +253,10 @@ export function DocumentEditor({
             <select
               id="status"
               name="status"
-              defaultValue={initialValues?.status ?? "active"}
+              value={status}
+              onChange={(event) => setStatus(event.target.value as typeof status)}
+              aria-invalid={Boolean(state.fieldErrors?.status)}
+              aria-describedby={state.fieldErrors?.status ? "metadata-error" : undefined}
               className="border-input bg-background focus-visible:ring-ring/35 h-8 w-full rounded-lg border px-2.5 text-sm outline-none focus-visible:ring-3"
             >
               <option value="active">Ativa</option>
@@ -198,7 +264,7 @@ export function DocumentEditor({
             </select>
           </div>
           {state.fieldErrors?.criticality || state.fieldErrors?.status ? (
-            <p className="text-destructive col-span-2 text-xs">
+            <p id="metadata-error" className="text-destructive col-span-2 text-xs">
               {state.fieldErrors.criticality ?? state.fieldErrors.status}
             </p>
           ) : null}
@@ -208,7 +274,7 @@ export function DocumentEditor({
       <div className="space-y-2">
         <Tabs value={tab} onValueChange={setTab}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Label htmlFor="bodyHtml">Conteúdo</Label>
+            <Label id="document-body-label" htmlFor="document-body">Conteúdo</Label>
             <TabsList>
               <TabsTrigger value="editar">
                 <Pencil className="size-3.5" />
@@ -227,6 +293,9 @@ export function DocumentEditor({
               onChange={setBodyHtml}
               placeholder="Comece a escrever a documentação…"
               departmentSlug={departmentSlug}
+              invalid={Boolean(state.fieldErrors?.bodyHtml)}
+              focusOnError={firstErrorField === "bodyHtml"}
+              describedBy={state.fieldErrors?.bodyHtml ? "bodyHtml-error" : undefined}
             />
             <p className="text-muted-foreground mt-2 text-xs">
               Use a barra de ferramentas para formatar — não é preciso saber
@@ -262,12 +331,12 @@ export function DocumentEditor({
         <input type="hidden" id="bodyHtml" name="bodyHtml" value={bodyHtml} />
 
         {state.fieldErrors?.bodyHtml ? (
-          <p className="text-destructive text-xs">{state.fieldErrors.bodyHtml}</p>
+          <p id="bodyHtml-error" className="text-destructive text-xs">{state.fieldErrors.bodyHtml}</p>
         ) : null}
       </div>
 
       {state.error ? (
-        <Alert variant="destructive">
+        <Alert id="document-form-error" tabIndex={-1} variant="destructive">
           <AlertCircle />
           <AlertDescription>{state.error}</AlertDescription>
         </Alert>
@@ -284,6 +353,9 @@ export function DocumentEditor({
           {departmentName}
         </span>
       </div>
+      <p role="status" className="text-muted-foreground text-xs">
+        {dirty ? "Alterações não salvas. Salve antes de usar Voltar ou Avançar do navegador." : "Nenhuma alteração pendente."}
+      </p>
     </form>
   );
 }

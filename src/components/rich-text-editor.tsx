@@ -313,11 +313,17 @@ export function RichTextEditor({
   onChange,
   placeholder,
   departmentSlug,
+  invalid = false,
+  focusOnError = false,
+  describedBy,
 }: {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
   departmentSlug: string;
+  invalid?: boolean;
+  focusOnError?: boolean;
+  describedBy?: string;
 }) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -342,8 +348,14 @@ export function RichTextEditor({
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
     editorProps: {
       attributes: {
+        id: "document-body",
+        role: "textbox",
+        "aria-label": "Conteúdo da documentação",
+        "aria-multiline": "true",
+        "aria-invalid": String(invalid),
+        ...(describedBy ? { "aria-describedby": describedBy } : {}),
         class: cn(
-          "doc-content min-h-[22rem] rounded-b-lg border p-4 focus:outline-none",
+          "doc-content min-h-[22rem] rounded-b-lg border p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         ),
       },
     },
@@ -357,6 +369,14 @@ export function RichTextEditor({
       editor.commands.setContent(value, { emitUpdate: false });
     }
   }, [editor, value]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dom.setAttribute("aria-invalid", String(invalid));
+    if (describedBy) editor.view.dom.setAttribute("aria-describedby", describedBy);
+    else editor.view.dom.removeAttribute("aria-describedby");
+    if (focusOnError) editor.commands.focus();
+  }, [editor, invalid, describedBy, focusOnError]);
 
   if (!editor) {
     return (
