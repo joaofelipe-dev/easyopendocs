@@ -1,21 +1,21 @@
 /* Subconjunto dos tokens oficiais Cenourão usado pelas novas superfícies de saúde. */
 :root {
-  --color-primary: #FE8000;
-  --color-primary-light: #FEF2E5;
-  --color-primary-text: #A55300;
-  --color-warning: #D97706;
-  --color-warning-light: #FEF3C7;
-  --color-warning-text: #A25904;
-  --color-secondary: #2D7D2E;
-  --color-secondary-light: #EAF2EA;
-  --color-secondary-text: #2D7D2E;
+  --brand-primary: #FE8000;
+  --brand-primary-light: #FEF2E5;
+  --brand-primary-text: #A55300;
+  --brand-warning: #D97706;
+  --brand-warning-light: #FEF3C7;
+  --brand-warning-text: #8A4B03;
+  --brand-secondary: #2D7D2E;
+  --brand-secondary-light: #EAF2EA;
+  --brand-secondary-text: #2D7D2E;
 }
 
 .dark {
-  --color-primary-light: #3A2510;
-  --color-primary-text: #FE9933;
-  --color-warning-light: #3A2A0A;
-  --color-warning-text: #E09237;
-  --color-secondary-light: #17251A;
-  --color-secondary-text: #579757;
+  --brand-primary-light: #3A2510;
+  --brand-primary-text: #FE9933;
+  --brand-warning-light: #3A2A0A;
+  --brand-warning-text: #E09237;
+  --brand-secondary-light: #17251A;
+  --brand-secondary-text: #85BB85;
 }
