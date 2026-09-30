@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertCircle, ChevronRight, History, Pencil, Trash2 } from "lucide-react";
+import { AlertCircle, ChevronRight, History, Link2, Pencil, Trash2 } from "lucide-react";
 
 import { deleteDocumentAction } from "@/actions/documents";
 import { ActionForm, ConfirmSubmit } from "@/components/action-form";
@@ -16,6 +16,10 @@ import { readDocumentSource } from "@/lib/content-sync";
 import { prisma } from "@/lib/prisma";
 import { PERMISSIONS, can, requireDepartmentAccess } from "@/lib/rbac";
 import { reviewStatus } from "@/lib/review-cycle";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { listDocumentBacklinks } from "@/lib/document-backlinks";
+import { getCurrentUser } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +77,14 @@ export default async function DocumentPage({
     fallbackDate: document.fileMtime,
   });
   const deleteFormId = `delete-document-${document.id}`;
+  const user = await getCurrentUser();
+  if (!user) notFound();
+  const backlinks = await listDocumentBacklinks({
+    user,
+    departmentSlug: access.department.slug,
+    documentSlug: document.slug,
+    excludeSourceDocumentId: document.id,
+  });
 
   return (
     <main className="flex min-w-0 gap-8">
@@ -103,6 +115,11 @@ export default async function DocumentPage({
               {document.createdBy ? ` · criado por ${document.createdBy.name}` : ""}
             </p>
             <ReviewBadge status={review} className="mt-2" />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {document.owner ? <Badge variant="outline">Responsável: {document.owner}</Badge> : null}
+              {document.criticality === "high" ? <Badge variant="destructive">Crítica</Badge> : null}
+              {document.contentStatus === "deprecated" ? <Badge variant="outline">Descontinuada</Badge> : null}
+            </div>
             {access.isSuperAdmin ? (
               <code className="text-muted-foreground text-xs">
                 {document.filePath}
@@ -147,7 +164,7 @@ export default async function DocumentPage({
                   className="text-destructive hover:text-destructive"
                   aria-label="Excluir documentação"
                   title={`Excluir "${document.title}"?`}
-                  description="Isso apaga o arquivo do disco e remove a documentação do portal permanentemente. Não pode ser desfeito."
+                  description={`Isso apaga o arquivo do disco e remove a documentação do portal permanentemente. Não pode ser desfeito.${backlinks.length > 0 ? ` ${backlinks.length === 1 ? "Uma documentação acessível referencia este conteúdo." : `${backlinks.length} documentações acessíveis referenciam este conteúdo.`} Corrija esses links antes de confirmar.` : ""}`}
                   confirmLabel="Excluir"
                 >
                   <Trash2 />
@@ -167,10 +184,51 @@ export default async function DocumentPage({
             dangerouslySetInnerHTML={{ __html: rendered.html }}
           />
         )}
+
+        {backlinks.length > 0 ? <Backlinks links={backlinks} /> : null}
       </article>
 
       {rendered ? <OnThisPage headings={rendered.headings} /> : null}
     </main>
+  );
+}
+
+function Backlinks({
+  links,
+}: {
+  links: Array<{
+    id: string;
+    sourceDocument: {
+      title: string;
+      slug: string;
+      department: { slug: string; name: string };
+    };
+  }>;
+}) {
+  return (
+    <Card className="backlink-panel print:hidden mt-10">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Link2 className="size-4" />
+          Referenciado por ({links.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-2 text-sm">
+          {links.map((link) => (
+            <li key={link.id}>
+              <Link
+                href={`/departamentos/${link.sourceDocument.department.slug}/${link.sourceDocument.slug}`}
+                className="font-medium underline-offset-4 hover:underline"
+              >
+                {link.sourceDocument.title}
+              </Link>
+              <span className="text-muted-foreground"> · {link.sourceDocument.department.name}</span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 

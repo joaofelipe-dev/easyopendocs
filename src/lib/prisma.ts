@@ -14,7 +14,10 @@ export function sqliteFilePath(connectionString: string): string {
   // `file:` é relativo à raiz do repo (mesma regra do prisma.config.ts); URLs
   // absolutas (ex.: file:/tmp/... na Vercel) passam direto.
   if (!connectionString.startsWith("file:")) return connectionString;
-  return path.resolve(process.cwd(), connectionString.slice("file:".length));
+  return path.resolve(
+    /* turbopackIgnore: true */ process.cwd(),
+    connectionString.slice("file:".length),
+  );
 }
 
 function createPrismaClient(): PrismaClient {

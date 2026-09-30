@@ -25,7 +25,9 @@ import { htmlToPlainText, sanitizeDocumentHtml } from "@/lib/sanitize";
  * o backfill dos documentos já indexados acontecer sozinho no primeiro sync
  * depois do deploy, sem `?force=1` manual.
  */
-export const SEARCH_INDEX_VERSION = 2;
+// 3 também reindexa os metadados de saúde adicionados ao espelho SQLite.
+// 4 faz o backfill do índice de links internos junto do próximo sync.
+export const SEARCH_INDEX_VERSION = 4;
 
 /**
  * Texto puro do corpo de um documento, a partir do arquivo bruto. Passa pelo

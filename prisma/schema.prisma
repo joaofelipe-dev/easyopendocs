@@ -140,6 +140,12 @@ model Document {
   reviewIntervalDays Int?
   /// Data da última revisão, do front-matter `reviewedAt`.
   lastReviewedAt DateTime?
+  /// Responsável operacional, vindo de `<!-- owner: ... -->` no arquivo.
+  owner String?
+  /// `low`, `normal` ou `high`; o arquivo segue sendo a fonte de verdade.
+  criticality String @default("normal")
+  /// `active` ou `deprecated`; conteúdos depreciados saem da fila de saúde.
+  contentStatus String @default("active")
   createdById  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -147,9 +153,27 @@ model Document {
   department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   createdBy  User?      @relation("DocumentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
   versions   DocumentVersion[]
+  outgoingLinks DocumentLink[] @relation("DocumentLinkSource")
 
   @@unique([departmentId, slug])
   @@index([departmentId, isOrphan])
+}
+
+/// Índice de links internos extraídos do HTML sanitizado. O destino é guardado
+/// por slug, não por FK: assim um link quebrado continua visível e volta a
+/// funcionar quando o arquivo de destino retorna ao filesystem.
+model DocumentLink {
+  id                   String @id @default(cuid())
+  sourceDocumentId     String
+  targetDepartmentSlug String
+  targetDocumentSlug   String
+  href                 String
+  createdAt            DateTime @default(now())
+
+  sourceDocument Document @relation("DocumentLinkSource", fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceDocumentId, targetDepartmentSlug, targetDocumentSlug])
+  @@index([targetDepartmentSlug, targetDocumentSlug])
 }
 
 /// De onde veio a versão. `FILESYSTEM` é o padrão quando o sync acha conteúdo

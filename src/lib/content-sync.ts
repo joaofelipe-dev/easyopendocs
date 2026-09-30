@@ -26,6 +26,8 @@ import {
   parseReviewInterval,
   parseReviewedAt,
 } from "@/lib/review-cycle";
+import { parseDocumentMetadata } from "@/lib/document-health";
+import { extractInternalDocumentLinks } from "@/lib/document-links";
 
 /**
  * Indexador do filesystem -> Postgres.
@@ -379,13 +381,27 @@ async function syncDepartmentDocuments(
       // Conteúdo idêntico, só o mtime mudou (touch, checkout) — ou o índice de
       // busca ficou para trás. Atualiza o carimbo para que o próximo sync volte
       // a cair no atalho barato.
+      //
+      // Quando a versão mudou, também atualizamos metadados que são derivados
+      // do mesmo front-matter. É o backfill da saúde para instalações já
+      // existentes, sem exigir que cada arquivo seja salvo de novo pela UI.
+      const { frontMatter } = parseFrontMatter(raw);
+      const metadata = parseDocumentMetadata(frontMatter);
       await prisma.document.update({
         where: { id: existing.id },
-        data: { fileMtime: file.mtime, fileSize: file.size, filePath: file.relativePath },
+        data: {
+          fileMtime: file.mtime,
+          fileSize: file.size,
+          filePath: file.relativePath,
+          owner: metadata.owner,
+          criticality: metadata.criticality,
+          contentStatus: metadata.status,
+        },
       });
 
       if (existing.searchVersion !== SEARCH_INDEX_VERSION) {
         await reindexDocument(existing.id, existing.title, existing.description, raw);
+        await replaceDocumentLinks(existing.id, raw);
       }
 
       stats.documentsSkipped += 1;
@@ -398,6 +414,7 @@ async function syncDepartmentDocuments(
     const plainText = documentPlainText(raw);
     const reviewIntervalDays = parseReviewInterval(frontMatter[REVIEW_EVERY_KEY]);
     const lastReviewedAt = parseReviewedAt(frontMatter[REVIEWED_AT_KEY]);
+    const metadata = parseDocumentMetadata(frontMatter);
 
     if (existing) {
       await prisma.document.update({
@@ -407,6 +424,9 @@ async function syncDepartmentDocuments(
           description,
           reviewIntervalDays,
           lastReviewedAt,
+          owner: metadata.owner,
+          criticality: metadata.criticality,
+          contentStatus: metadata.status,
           filePath: file.relativePath,
           contentHash,
           fileMtime: file.mtime,
@@ -421,6 +441,7 @@ async function syncDepartmentDocuments(
         description,
         plainText,
       });
+      await replaceDocumentLinks(existing.id, raw);
 
       // Só versiona quando o conteúdo mudou de verdade. Um sync com `force`
       // chega aqui para TODO arquivo do disco, inclusive os intocados — e o
@@ -447,6 +468,9 @@ async function syncDepartmentDocuments(
           description,
           reviewIntervalDays,
           lastReviewedAt,
+          owner: metadata.owner,
+          criticality: metadata.criticality,
+          contentStatus: metadata.status,
           filePath: file.relativePath,
           contentHash,
           fileMtime: file.mtime,
@@ -461,6 +485,7 @@ async function syncDepartmentDocuments(
         description,
         plainText,
       });
+      await replaceDocumentLinks(created.id, raw);
 
       await recordDocumentVersion({
         documentId: created.id,
@@ -485,6 +510,20 @@ async function syncDepartmentDocuments(
     });
     stats.documentsOrphaned += disappeared.length;
   }
+}
+
+/** Substitui o espelho do HTML de forma idempotente a cada sync relevante. */
+async function replaceDocumentLinks(documentId: string, rawHtml: string): Promise<void> {
+  const links = extractInternalDocumentLinks(rawHtml);
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.documentLink.deleteMany({ where: { sourceDocumentId: documentId } });
+    if (links.length > 0) {
+      await transaction.documentLink.createMany({
+        data: links.map((link) => ({ sourceDocumentId: documentId, ...link })),
+      });
+    }
+  });
 }
 
 /**

@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -15,7 +15,10 @@ export default async function globalSetup() {
 
   removeSqliteFile(testDatabaseUrl);
 
-  execSync("npx prisma migrate deploy", {
+  // Não depende de `npx` global: em containers e CI mínimos ele pode não
+  // existir (ou apontar para outra versão do Prisma), enquanto o projeto já
+  // declara a versão exata em node_modules.
+  execFileSync(process.execPath, [path.join(process.cwd(), "node_modules/prisma/build/index.js"), "migrate", "deploy"], {
     stdio: "inherit",
     env: { ...process.env, DATABASE_URL: testDatabaseUrl },
   });

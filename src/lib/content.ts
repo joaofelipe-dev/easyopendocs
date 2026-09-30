@@ -209,6 +209,9 @@ const MANAGED_FRONT_MATTER_KEYS = new Set([
   "description",
   "author",
   "createdat",
+  "owner",
+  "criticality",
+  "status",
 ]);
 
 export function renderDocumentFile(input: {
@@ -217,6 +220,11 @@ export function renderDocumentFile(input: {
   bodyHtml: string;
   author?: string | null;
   createdAt?: Date;
+  metadata?: {
+    owner?: string | null;
+    criticality?: string | null;
+    status?: string | null;
+  };
   /**
    * Front-matter do arquivo atual (de `frontMatterLines`), para que uma edição
    * pela UI não apague chaves que a tela não conhece — `reviewEvery`,
@@ -237,6 +245,15 @@ export function renderDocumentFile(input: {
     lines.push(`<!-- author: ${escapeComment(input.author)} -->`);
   }
   lines.push(`<!-- createdAt: ${createdAt.toISOString()} -->`);
+  if (input.metadata?.owner?.trim()) {
+    lines.push(`<!-- owner: ${escapeComment(input.metadata.owner)} -->`);
+  }
+  if (input.metadata?.criticality?.trim()) {
+    lines.push(`<!-- criticality: ${escapeComment(input.metadata.criticality)} -->`);
+  }
+  if (input.metadata?.status?.trim()) {
+    lines.push(`<!-- status: ${escapeComment(input.metadata.status)} -->`);
+  }
 
   for (const entry of input.preserve ?? []) {
     if (MANAGED_FRONT_MATTER_KEYS.has(entry.key)) continue;
